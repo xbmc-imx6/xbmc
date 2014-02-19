@@ -18,7 +18,7 @@
  *
  */
 
-#include <linux/mxcfb.h>
+#include <linux/fb.h>
 #include "system.h"
 #include <EGL/egl.h>
 
@@ -51,7 +51,6 @@ bool CEGLNativeTypeIMX::CheckCompatibility()
 
 void CEGLNativeTypeIMX::Initialize()
 {  
-  struct mxcfb_gbl_alpha alpha;
   int fd;
 
   

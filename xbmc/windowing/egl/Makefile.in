@@ -5,6 +5,7 @@ SRCS+= EGLNativeTypeAmlogic.cpp
 SRCS+= EGLNativeTypeAndroid.cpp
 SRCS+= EGLNativeTypeRaspberryPI.cpp
 SRCS+= EGLNativeTypeWayland.cpp
+SRCS+= EGLNativeTypeIMX.cpp
 SRCS+= EGLWrapper.cpp
 
 # Wayland specific detail
@@ -22,10 +23,6 @@ SRCS+= wayland/Callback.cpp \
        wayland/WaylandLibraries.cpp \
        wayland/XBMCConnection.cpp \
        wayland/XBMCSurface.cpp
-endif
-
-ifeq (@USE_IMXVPU@,1)
-SRCS+= EGLNativeTypeIMX.cpp
 endif
 
 LIB = windowing_egl.a
