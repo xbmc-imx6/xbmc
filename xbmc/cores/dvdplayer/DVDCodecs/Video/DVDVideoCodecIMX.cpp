@@ -304,7 +304,7 @@ bool CDVDVideoCodecIMX::VpuAllocFrameBuffers(void)
 #endif
   }
 
-  if (!m_ipuFrameBuffers.Init(m_initInfo.nPicWidth, m_initInfo.nPicHeight, 4))
+  if (!m_deinterlacer.Init(m_initInfo.nPicWidth, m_initInfo.nPicHeight, 4))
   {
     CLog::Log(LOGWARNING, "Failed to initialize IPU buffers: deinterlacing disabled\n");
   }
@@ -317,7 +317,6 @@ CDVDVideoCodecIMX::CDVDVideoCodecIMX()
   m_pFormatName = "iMX-xxx";
   memset(&m_decMemInfo, 0, sizeof(DecMemInfo));
   m_vpuHandle = 0;
-  m_ipuHandle = 0;
   m_vpuFrameBuffers = NULL;
   m_outputBuffers = NULL;
   m_extraMem = NULL;
@@ -492,7 +491,7 @@ void CDVDVideoCodecIMX::Dispose(void)
     m_vpuHandle = 0;
   }
 
-  m_ipuFrameBuffers.Close();
+  m_deinterlacer.Close();
 
   // Clear memory
   if (m_outputBuffers != NULL)
@@ -816,12 +815,16 @@ bool CDVDVideoCodecIMX::GetPicture(DVDVideoPicture* pDvdVideoPicture)
   if (idx != -1)
   {
     CDVDVideoCodecIMXBuffer *buffer = m_outputBuffers[idx];
+    CDVDVideoCodecIPUBuffer *ipuBuffer = NULL;
+
     pDvdVideoPicture->pts = buffer->GetPts();
     if (!m_usePTS)
     {
       pDvdVideoPicture->pts = DVD_NOPTS_VALUE;
     }
-    buffer->Queue(m_frameInfo.pDisplayFrameBuf, NULL);
+
+    ipuBuffer = m_deinterlacer.Process(m_frameInfo.eFieldType, m_frameInfo.pDisplayFrameBuf->pbufY);
+    buffer->Queue(m_frameInfo.pDisplayFrameBuf, ipuBuffer);
     pDvdVideoPicture->codecinfo = buffer;
 
 #ifdef TRACE_FRAMES
@@ -1160,5 +1163,23 @@ bool CDVDVideoCodecIPUBuffers::Close()
     m_buffers = NULL;
   }
 
+  m_bufferNum = 0;
   return true;
+}
+
+CDVDVideoCodecIPUBuffer *CDVDVideoCodecIPUBuffers::Process(VpuFieldType field, int phyAddr)
+{
+  CDVDVideoCodecIPUBuffer *target = NULL;
+
+  for (int i=0; i < m_bufferNum; i++ )
+  {
+    if (!m_buffers[i].IsAvail()) continue;
+    if (m_buffers[i].Process(m_ipuHandle, field, phyAddr))
+    {
+      target = m_buffers + i;
+      break;
+    }
+  }
+
+  return target;
 }

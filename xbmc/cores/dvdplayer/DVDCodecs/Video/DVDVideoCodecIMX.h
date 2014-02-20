@@ -115,6 +115,8 @@ class CDVDVideoCodecIPUBuffers
     bool Init(int width, int height, int numBuffers);
     bool Close();
 
+    CDVDVideoCodecIPUBuffer *Process(VpuFieldType field, int phyAddr);
+
   private:
     int                       m_ipuHandle;
     int                       m_bufferNum;
@@ -158,11 +160,10 @@ protected:
   DecMemInfo          m_decMemInfo;        // VPU dedicated memory description
   VpuDecHandle        m_vpuHandle;         // Handle for VPU library calls
   VpuDecInitInfo      m_initInfo;          // Initial info returned from VPU at decoding start
-  int                 m_ipuHandle;
   bool                m_dropState;         // Current drop state
   int                 m_vpuFrameBufferNum; // Total number of allocated frame buffers
   VpuFrameBuffer     *m_vpuFrameBuffers;   // Table of VPU frame buffers description
-  CDVDVideoCodecIPUBuffers  m_ipuFrameBuffers;
+  CDVDVideoCodecIPUBuffers  m_deinterlacer;
   CDVDVideoCodecIMXBuffer **m_outputBuffers;
   VpuMemDesc         *m_extraMem;          // Table of allocated extra Memory
 //  VpuMemDesc         *m_outputBuffers;     // Table of buffers out of VPU (used to call properly VPU_DecOutFrameDisplayed)
