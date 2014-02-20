@@ -1197,5 +1197,12 @@ CDVDVideoCodecIPUBuffer *CDVDVideoCodecIPUBuffers::Process(int w, int h, VpuFiel
     }
   }
 
+  // Buffers are there but there is no free one, this is an error!
+  // Rendering will continue with unprocessed frames ...
+  if ((m_bufferNum > 0) && target==NULL)
+  {
+    CLog::Log(LOGERROR, "Deinterlacing: did not find free buffer, forward unprocessed frame\n");
+  }
+
   return target;
 }
