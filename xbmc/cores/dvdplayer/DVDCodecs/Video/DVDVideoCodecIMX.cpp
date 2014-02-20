@@ -998,6 +998,7 @@ bool CDVDVideoCodecIPUBuffer::Process(int fd, int w, int h, VpuFieldType field, 
   // Input is the VPU decoded frame
   task.input.width    = w;
   task.input.height   = h;
+  task.input.format   = IPU_PIX_FMT_NV12;
   task.input.paddr    = (int)phyAddr;
 
   // Output is our IPU buffer
