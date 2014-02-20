@@ -27,6 +27,7 @@
 #include "threads/CriticalSection.h"
 #include "utils/BitstreamConverter.h"
 
+#include <queue>
 
 //#define IMX_PROFILE
 //#define TRACE_FRAMES
@@ -64,8 +65,6 @@ public:
   bool               Rendered();
   void               Queue(VpuFrameBuffer *buffer);
   VpuDecRetCode      ReleaseFramebuffer(VpuDecHandle *handle);
-  void               SetPts(double pts);
-  double             GetPts(void) const;
 
 protected:
   // private because we are reference counted
@@ -77,7 +76,6 @@ protected:
   long                m_refs;
   VpuFrameBuffer     *m_frameBuffer;
   bool                m_rendered;
-  double              m_pts;
 };
 
 class CDVDVideoCodecIMX : public CDVDVideoCodec
@@ -116,7 +114,6 @@ protected:
   DecMemInfo          m_decMemInfo;        // VPU dedicated memory description
   VpuDecHandle        m_vpuHandle;         // Handle for VPU library calls
   VpuDecInitInfo      m_initInfo;          // Initial info returned from VPU at decoding start
-  bool                m_tsSyncRequired;    // state whether timestamp manager has to be sync'ed
   bool                m_dropState;         // Current drop state
   int                 m_vpuFrameBufferNum; // Total number of allocated frame buffers
   VpuFrameBuffer     *m_vpuFrameBuffers;   // Table of VPU frame buffers description
@@ -125,6 +122,7 @@ protected:
 //  VpuMemDesc         *m_outputBuffers;     // Table of buffers out of VPU (used to call properly VPU_DecOutFrameDisplayed)
   int                 m_frameCounter;      // Decoded frames counter
   bool                m_usePTS;            // State whether pts out of decoding process should be used
+  std::priority_queue<double>         m_pts;
   VpuDecOutFrameInfo  m_frameInfo;
   CBitstreamConverter *m_converter;
   bool                m_convert_bitstream;
