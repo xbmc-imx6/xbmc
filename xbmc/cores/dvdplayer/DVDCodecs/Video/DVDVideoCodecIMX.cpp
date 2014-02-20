@@ -1,4 +1,4 @@
-/* 
+/*
  *      Copyright (C) 2010-2013 Team XBMC
  *      http://www.xbmc.org
  *
@@ -18,15 +18,16 @@
  *
  */
 
-#include <linux/mxcfb.h>
 #include "DVDVideoCodecIMX.h"
 
-#include <linux/mxc_v4l2.h>
 #include <sys/stat.h>
+#include <string.h>
 #include <fcntl.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
 #include <sys/mman.h>
+#include <linux/mxcfb.h>
+#include <linux/ipu.h>
 #include "threads/SingleLock.h"
 #include "utils/log.h"
 #include "DVDClock.h"
@@ -303,20 +304,24 @@ bool CDVDVideoCodecIMX::VpuAllocFrameBuffers(void)
 #endif
   }
 
+  if (!m_ipuFrameBuffers.Init(m_initInfo.nPicWidth, m_initInfo.nPicHeight, 4))
+  {
+    CLog::Log(LOGWARNING, "Failed to initialize IPU buffers: deinterlacing disabled\n");
+  }
+
   return true;
 }
 
 CDVDVideoCodecIMX::CDVDVideoCodecIMX()
 {
-  m_vpuHandle = 0;
   m_pFormatName = "iMX-xxx";
   memset(&m_decMemInfo, 0, sizeof(DecMemInfo));
   m_vpuHandle = 0;
+  m_ipuHandle = 0;
   m_vpuFrameBuffers = NULL;
   m_outputBuffers = NULL;
   m_extraMem = NULL;
   m_vpuFrameBufferNum = 0;
-  m_tsSyncRequired = true;
   m_dropState = false;
   m_convert_bitstream = false;
   m_frameCounter = 0;
@@ -486,6 +491,8 @@ void CDVDVideoCodecIMX::Dispose(void)
     }
     m_vpuHandle = 0;
   }
+
+  m_ipuFrameBuffers.Close();
 
   // Clear memory
   if (m_outputBuffers != NULL)
@@ -761,9 +768,6 @@ void CDVDVideoCodecIMX::Reset()
 
   CLog::Log(LOGDEBUG, "%s - called\n", __FUNCTION__);
 
-  // We have to resync timestamp manager
-  m_tsSyncRequired = true;
-
   // Invalidate all buffers
   for(int i=0; i < m_vpuFrameBufferNum; i++)
     m_outputBuffers[i]->ReleaseFramebuffer(&m_vpuHandle);
@@ -817,7 +821,7 @@ bool CDVDVideoCodecIMX::GetPicture(DVDVideoPicture* pDvdVideoPicture)
     {
       pDvdVideoPicture->pts = DVD_NOPTS_VALUE;
     }
-    buffer->Queue(m_frameInfo.pDisplayFrameBuf);
+    buffer->Queue(m_frameInfo.pDisplayFrameBuf, NULL);
     pDvdVideoPicture->codecinfo = buffer;
 
 #ifdef TRACE_FRAMES
@@ -864,6 +868,7 @@ CDVDVideoCodecIMXBuffer::CDVDVideoCodecIMXBuffer()
   : m_refs(1)
 #endif
   , m_frameBuffer(NULL)
+  , m_ipuBuffer(NULL)
   , m_rendered(false)
   , m_pts(DVD_NOPTS_VALUE)
 {
@@ -918,10 +923,11 @@ bool CDVDVideoCodecIMXBuffer::Rendered()
   return m_rendered;
 }
 
-void CDVDVideoCodecIMXBuffer::Queue(VpuFrameBuffer *buffer)
+void CDVDVideoCodecIMXBuffer::Queue(VpuFrameBuffer *buffer, CDVDVideoCodecIPUBuffer *ipuBuffer)
 {
   CSingleLock lock(CDVDVideoCodecIMX::m_codecBufferLock);
   m_frameBuffer = buffer;
+  m_ipuBuffer = ipuBuffer;
   m_rendered = false;
 }
 
@@ -939,6 +945,9 @@ VpuDecRetCode CDVDVideoCodecIMXBuffer::ReleaseFramebuffer(VpuDecHandle *handle)
 #ifdef TRACE_FRAMES
   CLog::Log(LOGDEBUG, "-  %02d\n", m_idx);
 #endif
+  if (m_ipuBuffer != NULL)
+    m_ipuBuffer->Release();
+
   m_rendered = false;
   m_frameBuffer = NULL;
   m_pts = DVD_NOPTS_VALUE;
@@ -958,4 +967,198 @@ double CDVDVideoCodecIMXBuffer::GetPts(void) const
 CDVDVideoCodecIMXBuffer::~CDVDVideoCodecIMXBuffer()
 {
   assert(m_refs == 0);
+}
+
+CDVDVideoCodecIPUBuffer::CDVDVideoCodecIPUBuffer()
+  : m_pPhyAddr(0)
+  , m_pVirtAddr(NULL)
+  , m_nSize(0)
+  , m_bAvail(true)
+{
+}
+
+bool CDVDVideoCodecIPUBuffer::Process(int fd, VpuFieldType field, int phyAddr)
+{
+  struct ipu_task task;
+  memset(&task, 0, sizeof(task));
+
+  // Input is the VPU decoded frame
+  task.input.width    = m_nWidth;
+  task.input.height   = m_nHeight;
+  task.input.paddr    = phyAddr;
+
+  // Output is our IPU buffer
+  task.output.width   = m_nWidth;
+  task.output.height  = m_nHeight;
+  task.output.format  = IPU_PIX_FMT_NV12;
+  task.output.rotate  = 0;
+  task.output.paddr   = m_pPhyAddr;
+
+  switch (field)
+  {
+  case VPU_FIELD_TB:
+    task.input.deinterlace.enable    = 1;
+    task.input.deinterlace.motion    = LOW_MOTION;
+    task.input.deinterlace.field_fmt = IPU_DEINTERLACE_FIELD_TOP;
+    break;
+  case VPU_FIELD_BT:
+    task.input.deinterlace.enable    = 1;
+    task.input.deinterlace.motion    = LOW_MOTION;
+    task.input.deinterlace.field_fmt = IPU_DEINTERLACE_FIELD_BOTTOM;
+    break;
+  case VPU_FIELD_NONE:
+  default:
+    task.input.deinterlace.enable    = 0;
+    task.input.deinterlace.motion    = MED_MOTION;
+    break;
+  }
+
+  task.input.paddr_n  = 0;
+
+  int ret = ioctl(fd, IPU_QUEUE_TASK, &task);
+  if (ret < 0)
+  {
+    m_bAvail = true;
+    CLog::Log(LOGERROR, "IPU task failed: %s\n", strerror(errno));
+    return false;
+  }
+
+  m_bAvail = false;
+  return true;
+}
+
+bool CDVDVideoCodecIPUBuffer::Allocate(int fd, int width, int height)
+{
+  m_nWidth = Align(width,FRAME_ALIGN);
+  m_nHeight = Align(height,(2*FRAME_ALIGN));
+  // NV12 == 12 bpp
+  m_nSize = m_nWidth*m_nHeight*12/8;
+  m_pPhyAddr = m_nSize;
+
+  CLog::Log(LOGNOTICE, "IPU: alloc %d bytes for frame of %dx%d\n", m_nSize, m_nWidth, m_nHeight);
+
+  int r = ioctl(fd, IPU_ALLOC, &m_pPhyAddr);
+  if (r < 0)
+  {
+    m_pPhyAddr = 0;
+    CLog::Log(LOGERROR, "ioctl IPU_ALLOC fail: disable deinterlacing: %s\n", strerror(errno));
+    return false;
+  }
+
+  m_pVirtAddr = mmap(0, m_nSize, PROT_READ | PROT_WRITE, MAP_SHARED,
+                     fd, m_pPhyAddr);
+  if (!m_pVirtAddr)
+  {
+    CLog::Log(LOGERROR, "IPU mmap failed: disable deinterlacing: %s\n", strerror(errno));
+    return false;
+  }
+
+  return true;
+}
+
+bool CDVDVideoCodecIPUBuffer::Free(int fd)
+{
+  bool ret = true;
+
+  // Unmap virtual memory
+  if (m_pVirtAddr != NULL)
+  {
+    if(munmap(m_pVirtAddr, m_nSize))
+    {
+      CLog::Log(LOGERROR, "IPU unmap failed: %s\n", strerror(errno));
+      ret = false;
+    }
+
+    m_pVirtAddr = NULL;
+  }
+
+  // Free IPU memory
+  if (m_pPhyAddr)
+  {
+    if (ioctl(fd, IPU_FREE, &m_pPhyAddr))
+    {
+      CLog::Log(LOGERROR, "IPU free buffer 0x%x failed: %s\n",
+                m_pPhyAddr, strerror(errno));
+      ret = false;
+    }
+
+    m_pPhyAddr = 0;
+  }
+
+  return ret;
+}
+
+CDVDVideoCodecIPUBuffers::CDVDVideoCodecIPUBuffers()
+  : m_ipuHandle(0)
+  , m_bufferNum(0)
+  , m_buffers(NULL)
+{
+}
+
+CDVDVideoCodecIPUBuffers::~CDVDVideoCodecIPUBuffers()
+{
+  Close();
+}
+
+bool CDVDVideoCodecIPUBuffers::Init(int width, int height, int numBuffers)
+{
+  if (numBuffers<=0)
+  {
+    CLog::Log(LOGERROR, "IPU Init: invalid number of buffers: %d\n", numBuffers);
+    return false;
+  }
+
+  m_ipuHandle = open("/dev/mxc_ipu", O_RDWR, 0);
+  if (m_ipuHandle<=0)
+  {
+    CLog::Log(LOGWARNING, "Failed to initialize IPU: deinterlacing disabled: %s\n",
+              strerror(errno));
+    m_ipuHandle = 0;
+    return false;
+  }
+
+  m_bufferNum = numBuffers;
+  m_buffers = new CDVDVideoCodecIPUBuffer[m_bufferNum];
+
+  for (int i=0; i < m_bufferNum; i++ )
+  {
+    if (!m_buffers[i].Allocate(m_ipuHandle, width, height))
+    {
+      Close();
+      return false;
+    }
+  }
+
+  return true;
+}
+
+bool CDVDVideoCodecIPUBuffers::Close()
+{
+  bool ret = true;
+
+  if (m_ipuHandle)
+  {
+    for (int i=0; i < m_bufferNum; i++)
+    {
+      if (!m_buffers[i].Free(m_ipuHandle))
+        ret = false;
+    }
+
+    // Close IPU device
+    if (close(m_ipuHandle))
+    {
+      CLog::Log(LOGERROR, "IPU failed to close interface: %s\n", strerror(errno));
+      ret = false;
+    }
+
+    m_ipuHandle = 0;
+  }
+
+  if (m_buffers)
+  {
+    delete m_buffers;
+    m_buffers = NULL;
+  }
+
+  return true;
 }
