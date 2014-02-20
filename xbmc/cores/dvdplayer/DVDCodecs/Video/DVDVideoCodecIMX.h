@@ -51,15 +51,15 @@ class CDVDVideoCodecIPUBuffer
 public:
   CDVDVideoCodecIPUBuffer();
 
-  int                     PhyAddr() const { return m_pPhyAddr; }
-  void                   *VirtAddr() const { return m_pVirtAddr; }
+  uint8_t                *PhyAddr() const { return (uint8_t*)m_pPhyAddr; }
+  uint8_t                *VirtAddr() const { return (uint8_t*)m_pVirtAddr; }
 
   // Returns whether the buffer is ready to be used
   bool                    IsAvail() const { return m_bAvail; }
-  bool                    Process(int fd, VpuFieldType field, int phyAddr);
+  bool                    Process(int fd, int w, int h, VpuFieldType field, uint8_t *phyAddr);
   void                    Release() { m_bAvail = true; }
 
-  bool                    Allocate(int fd, int width, int height);
+  bool                    Allocate(int fd, int width, int height, int nAlign);
   bool                    Free(int fd);
 
 private:
@@ -84,6 +84,9 @@ public:
   virtual void             Lock();
   virtual long             Release();
   virtual bool             IsValid();
+
+  uint8_t                 *PhyAddr() const;
+  uint8_t                 *VirtAddr() const;
 
   bool                     Rendered();
   void                     Queue(VpuFrameBuffer *buffer,
@@ -112,10 +115,10 @@ class CDVDVideoCodecIPUBuffers
     CDVDVideoCodecIPUBuffers();
     ~CDVDVideoCodecIPUBuffers();
 
-    bool Init(int width, int height, int numBuffers);
+    bool Init(int width, int height, int numBuffers, int nAlign);
     bool Close();
 
-    CDVDVideoCodecIPUBuffer *Process(VpuFieldType field, int phyAddr);
+    CDVDVideoCodecIPUBuffer *Process(int w, int h, VpuFieldType field, uint8_t *phyAddr);
 
   private:
     int                       m_ipuHandle;
