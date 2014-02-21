@@ -771,6 +771,8 @@ void CDVDVideoCodecIMX::Reset()
   for(int i=0; i < m_vpuFrameBufferNum; i++)
     m_outputBuffers[i]->ReleaseFramebuffer(&m_vpuHandle);
 
+  m_deinterlacer.Reset();
+
   // Flush VPU
   ret = VPU_DecFlushAll(m_vpuHandle);
   if (ret != VPU_DEC_RET_SUCCESS)
@@ -823,7 +825,7 @@ bool CDVDVideoCodecIMX::GetPicture(DVDVideoPicture* pDvdVideoPicture)
       pDvdVideoPicture->pts = DVD_NOPTS_VALUE;
     }
 
-    ipuBuffer = m_deinterlacer.Process(m_frameInfo.pExtInfo->nFrmWidth, m_frameInfo.pExtInfo->nFrmHeight, m_frameInfo.eFieldType, m_frameInfo.pDisplayFrameBuf->pbufY);
+    ipuBuffer = m_deinterlacer.Process(&m_frameInfo, buffer);
     buffer->Queue(m_frameInfo.pDisplayFrameBuf, ipuBuffer);
     pDvdVideoPicture->codecinfo = buffer;
 
@@ -958,9 +960,7 @@ VpuDecRetCode CDVDVideoCodecIMXBuffer::ReleaseFramebuffer(VpuDecHandle *handle)
 #ifdef TRACE_FRAMES
   CLog::Log(LOGDEBUG, "-  %02d\n", m_idx);
 #endif
-  if (m_ipuBuffer != NULL)
-    m_ipuBuffer->Release();
-
+  SAFE_RELEASE(m_ipuBuffer);
   m_rendered = false;
   m_frameBuffer = NULL;
   m_pts = DVD_NOPTS_VALUE;
@@ -990,34 +990,37 @@ CDVDVideoCodecIPUBuffer::CDVDVideoCodecIPUBuffer()
 {
 }
 
-bool CDVDVideoCodecIPUBuffer::Process(int fd, int w, int h, VpuFieldType field, uint8_t *phyAddr)
+bool CDVDVideoCodecIPUBuffer::Process(int fd, VpuDecOutFrameInfo *frameInfo, uint8_t *previousPhyAddr)
 {
   struct ipu_task task;
   memset(&task, 0, sizeof(task));
 
   // Input is the VPU decoded frame
-  task.input.width    = w;
-  task.input.height   = h;
+  task.input.width    = frameInfo->pExtInfo->nFrmWidth;
+  task.input.height   = frameInfo->pExtInfo->nFrmHeight;
   task.input.format   = IPU_PIX_FMT_NV12;
-  task.input.paddr    = (int)phyAddr;
+  task.input.paddr    = (int)frameInfo->pDisplayFrameBuf->pbufY;
 
   // Output is our IPU buffer
-  task.output.width   = w;
-  task.output.height  = h;
+  task.output.width   = frameInfo->pExtInfo->nFrmWidth;
+  task.output.height  = frameInfo->pExtInfo->nFrmHeight;
   task.output.format  = IPU_PIX_FMT_NV12;
   task.output.rotate  = 0;
   task.output.paddr   = m_pPhyAddr;
 
-  switch (field)
+  // Fill previous buffer address
+  task.input.paddr_n = (int)previousPhyAddr;
+
+  switch (frameInfo->eFieldType)
   {
   case VPU_FIELD_TB:
     task.input.deinterlace.enable    = 1;
-    task.input.deinterlace.motion    = LOW_MOTION;
+    task.input.deinterlace.motion    = task.input.paddr_n?LOW_MOTION:HIGH_MOTION;
     task.input.deinterlace.field_fmt = IPU_DEINTERLACE_FIELD_TOP;
     break;
   case VPU_FIELD_BT:
     task.input.deinterlace.enable    = 1;
-    task.input.deinterlace.motion    = LOW_MOTION;
+    task.input.deinterlace.motion    = task.input.paddr_n?LOW_MOTION:HIGH_MOTION;
     task.input.deinterlace.field_fmt = IPU_DEINTERLACE_FIELD_BOTTOM;
     break;
   case VPU_FIELD_NONE:
@@ -1026,8 +1029,6 @@ bool CDVDVideoCodecIPUBuffer::Process(int fd, int w, int h, VpuFieldType field, 
     task.input.deinterlace.motion    = MED_MOTION;
     break;
   }
-
-  task.input.paddr_n  = 0;
 
   int ret = ioctl(fd, IPU_QUEUE_TASK, &task);
   if (ret < 0)
@@ -1112,6 +1113,7 @@ CDVDVideoCodecIPUBuffers::CDVDVideoCodecIPUBuffers()
   : m_ipuHandle(0)
   , m_bufferNum(0)
   , m_buffers(NULL)
+  , m_lastVpuBuffer(NULL)
 {
 }
 
@@ -1152,6 +1154,11 @@ bool CDVDVideoCodecIPUBuffers::Init(int width, int height, int numBuffers, int n
   return true;
 }
 
+bool CDVDVideoCodecIPUBuffers::Reset()
+{
+  SAFE_RELEASE(m_lastVpuBuffer);
+}
+
 bool CDVDVideoCodecIPUBuffers::Close()
 {
   bool ret = true;
@@ -1181,17 +1188,26 @@ bool CDVDVideoCodecIPUBuffers::Close()
   }
 
   m_bufferNum = 0;
+  SAFE_RELEASE(m_lastVpuBuffer);
   return true;
 }
 
-CDVDVideoCodecIPUBuffer *CDVDVideoCodecIPUBuffers::Process(int w, int h, VpuFieldType field, uint8_t *phyAddr)
+CDVDVideoCodecIPUBuffer *CDVDVideoCodecIPUBuffers::Process(VpuDecOutFrameInfo *frameInfo, CDVDVideoCodecIMXBuffer *vpuBuffer)
 {
   CDVDVideoCodecIPUBuffer *target = NULL;
 
   for (int i=0; i < m_bufferNum; i++ )
   {
     if (!m_buffers[i].IsAvail()) continue;
-    if (m_buffers[i].Process(m_ipuHandle, w, h, field, phyAddr))
+
+    // IPU process:
+    // SRC: Current VPU physical buffer address + last VPU buffer address
+    // DST: IPU buffer[i]
+    uint8_t *prevPhyAddr = NULL;
+    if (m_lastVpuBuffer)
+      prevPhyAddr = m_lastVpuBuffer->PhyAddr();
+
+    if (m_buffers[i].Process(m_ipuHandle, frameInfo, prevPhyAddr))
     {
       target = m_buffers + i;
       break;
@@ -1204,6 +1220,11 @@ CDVDVideoCodecIPUBuffer *CDVDVideoCodecIPUBuffers::Process(int w, int h, VpuFiel
   {
     CLog::Log(LOGERROR, "Deinterlacing: did not find free buffer, forward unprocessed frame\n");
   }
+
+  SAFE_RELEASE(m_lastVpuBuffer);
+  m_lastVpuBuffer = vpuBuffer;
+  if (m_lastVpuBuffer != NULL)
+    m_lastVpuBuffer->Lock();
 
   return target;
 }

@@ -46,30 +46,7 @@ typedef struct
   unsigned int phyMem_size[VPU_DEC_MAX_NUM_MEM_NUM];
 } DecMemInfo;
 
-class CDVDVideoCodecIPUBuffer
-{
-public:
-  CDVDVideoCodecIPUBuffer();
-
-  uint8_t                *PhyAddr() const { return (uint8_t*)m_pPhyAddr; }
-  uint8_t                *VirtAddr() const { return (uint8_t*)m_pVirtAddr; }
-
-  // Returns whether the buffer is ready to be used
-  bool                    IsAvail() const { return m_bAvail; }
-  bool                    Process(int fd, int w, int h, VpuFieldType field, uint8_t *phyAddr);
-  void                    Release() { m_bAvail = true; }
-
-  bool                    Allocate(int fd, int width, int height, int nAlign);
-  bool                    Free(int fd);
-
-private:
-  int                      m_pPhyAddr;
-  void                    *m_pVirtAddr;
-  int                      m_nWidth;
-  int                      m_nHeight;
-  int                      m_nSize;
-  bool                     m_bAvail;
-};
+class CDVDVideoCodecIPUBuffer;
 
 class CDVDVideoCodecIMXBuffer : public CDVDVideoCodecBuffer
 {
@@ -109,6 +86,32 @@ protected:
   double                   m_pts;
 };
 
+class CDVDVideoCodecIPUBuffer
+{
+public:
+  CDVDVideoCodecIPUBuffer();
+
+  uint8_t                *PhyAddr() const { return (uint8_t*)m_pPhyAddr; }
+  uint8_t                *VirtAddr() const { return (uint8_t*)m_pVirtAddr; }
+
+  // Returns whether the buffer is ready to be used
+  bool                    IsAvail() const { return m_bAvail; }
+  bool                    Process(int fd, VpuDecOutFrameInfo *frameInfo,
+                                  uint8_t *previousPhyAddr);
+  void                    Release() { m_bAvail = true; }
+
+  bool                    Allocate(int fd, int width, int height, int nAlign);
+  bool                    Free(int fd);
+
+private:
+  int                      m_pPhyAddr;
+  void                    *m_pVirtAddr;
+  int                      m_nWidth;
+  int                      m_nHeight;
+  int                      m_nSize;
+  bool                     m_bAvail;
+};
+
 class CDVDVideoCodecIPUBuffers
 {
   public:
@@ -116,14 +119,16 @@ class CDVDVideoCodecIPUBuffers
     ~CDVDVideoCodecIPUBuffers();
 
     bool Init(int width, int height, int numBuffers, int nAlign);
+    bool Reset();
     bool Close();
 
-    CDVDVideoCodecIPUBuffer *Process(int w, int h, VpuFieldType field, uint8_t *phyAddr);
+    CDVDVideoCodecIPUBuffer *Process(VpuDecOutFrameInfo *frameInfo, CDVDVideoCodecIMXBuffer *vpuBuffer);
 
   private:
     int                       m_ipuHandle;
     int                       m_bufferNum;
     CDVDVideoCodecIPUBuffer  *m_buffers;
+    CDVDVideoCodecIMXBuffer  *m_lastVpuBuffer;
 };
 
 
