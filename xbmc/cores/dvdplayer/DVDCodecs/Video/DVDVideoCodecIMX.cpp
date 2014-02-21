@@ -825,9 +825,13 @@ bool CDVDVideoCodecIMX::GetPicture(DVDVideoPicture* pDvdVideoPicture)
       pDvdVideoPicture->pts = DVD_NOPTS_VALUE;
     }
 
-    ipuBuffer = m_deinterlacer.Process(&m_frameInfo, buffer);
-    buffer->Queue(m_frameInfo.pDisplayFrameBuf, ipuBuffer);
-    pDvdVideoPicture->codecinfo = buffer;
+    buffer->Queue(&m_frameInfo);
+
+    ipuBuffer = m_deinterlacer.Process(buffer, m_frameInfo.eFieldType);
+    if (ipuBuffer)
+      pDvdVideoPicture->codecinfo = ipuBuffer;
+    else
+      pDvdVideoPicture->codecinfo = buffer;
 
 #ifdef TRACE_FRAMES
     CLog::Log(LOGDEBUG, "+  %02d\n", idx);
@@ -835,10 +839,6 @@ bool CDVDVideoCodecIMX::GetPicture(DVDVideoPicture* pDvdVideoPicture)
 #endif
 
     pDvdVideoPicture->codecinfo->Lock();
-    pDvdVideoPicture->codecinfo->iWidth = m_frameInfo.pExtInfo->nFrmWidth;
-    pDvdVideoPicture->codecinfo->iHeight = m_frameInfo.pExtInfo->nFrmHeight;
-    pDvdVideoPicture->codecinfo->data[0] = buffer->VirtAddr();
-    pDvdVideoPicture->codecinfo->data[1] = buffer->PhyAddr();
   }
   else
   {
@@ -873,7 +873,6 @@ CDVDVideoCodecIMXBuffer::CDVDVideoCodecIMXBuffer()
   : m_refs(1)
 #endif
   , m_frameBuffer(NULL)
-  , m_ipuBuffer(NULL)
   , m_rendered(false)
   , m_pts(DVD_NOPTS_VALUE)
 {
@@ -923,27 +922,21 @@ bool CDVDVideoCodecIMXBuffer::IsValid()
   return m_frameBuffer != NULL;
 }
 
-uint8_t *CDVDVideoCodecIMXBuffer::PhyAddr() const
-{
-  return (uint8_t*)(m_ipuBuffer != NULL?m_ipuBuffer->PhyAddr():m_frameBuffer->pbufY);
-}
-
-uint8_t *CDVDVideoCodecIMXBuffer::VirtAddr() const
-{
-  return (uint8_t*)(m_ipuBuffer != NULL?m_ipuBuffer->VirtAddr():m_frameBuffer->pbufVirtY);
-}
-
 bool CDVDVideoCodecIMXBuffer::Rendered()
 {
   return m_rendered;
 }
 
-void CDVDVideoCodecIMXBuffer::Queue(VpuFrameBuffer *buffer, CDVDVideoCodecIPUBuffer *ipuBuffer)
+void CDVDVideoCodecIMXBuffer::Queue(VpuDecOutFrameInfo *frameInfo)
 {
   CSingleLock lock(CDVDVideoCodecIMX::m_codecBufferLock);
-  m_frameBuffer = buffer;
-  m_ipuBuffer = ipuBuffer;
+  m_frameBuffer = frameInfo->pDisplayFrameBuf;
   m_rendered = false;
+
+  iWidth  = frameInfo->pExtInfo->nFrmWidth;
+  iHeight = frameInfo->pExtInfo->nFrmHeight;
+  data[0] = m_frameBuffer->pbufVirtY;
+  data[1] = m_frameBuffer->pbufY;
 }
 
 VpuDecRetCode CDVDVideoCodecIMXBuffer::ReleaseFramebuffer(VpuDecHandle *handle)
@@ -960,7 +953,6 @@ VpuDecRetCode CDVDVideoCodecIMXBuffer::ReleaseFramebuffer(VpuDecHandle *handle)
 #ifdef TRACE_FRAMES
   CLog::Log(LOGDEBUG, "-  %02d\n", m_idx);
 #endif
-  SAFE_RELEASE(m_ipuBuffer);
   m_rendered = false;
   m_frameBuffer = NULL;
   m_pts = DVD_NOPTS_VALUE;
@@ -983,36 +975,85 @@ CDVDVideoCodecIMXBuffer::~CDVDVideoCodecIMXBuffer()
 }
 
 CDVDVideoCodecIPUBuffer::CDVDVideoCodecIPUBuffer()
-  : m_pPhyAddr(0)
+  : m_refs(1)
+  , m_source(NULL)
+  , m_pPhyAddr(NULL)
   , m_pVirtAddr(NULL)
   , m_nSize(0)
-  , m_bAvail(true)
 {
 }
 
-bool CDVDVideoCodecIPUBuffer::Process(int fd, VpuDecOutFrameInfo *frameInfo, uint8_t *previousPhyAddr)
+CDVDVideoCodecIPUBuffer::~CDVDVideoCodecIPUBuffer()
+{
+  assert(m_refs == 0);
+}
+
+void CDVDVideoCodecIPUBuffer::Lock()
+{
+  AtomicIncrement(&m_refs);
+}
+
+long CDVDVideoCodecIPUBuffer::Release()
+{
+  long count = AtomicDecrement(&m_refs);
+  if (count == 1)
+  {
+    SAFE_RELEASE(m_source);
+  }
+  else if (count == 0)
+  {
+    delete this;
+  }
+
+  return count;
+}
+
+bool CDVDVideoCodecIPUBuffer::IsValid()
+{
+  CSingleLock lock(CDVDVideoCodecIMX::m_codecBufferLock);
+  return (m_source != NULL) && m_pPhyAddr;
+}
+
+bool CDVDVideoCodecIPUBuffer::Process(int fd, CDVDVideoCodecBuffer *sourceBuffer,
+                                      uint8_t *previousPhyAddr, VpuFieldType fieldType)
 {
   struct ipu_task task;
   memset(&task, 0, sizeof(task));
 
+  SAFE_RELEASE(m_source);
+
+  iWidth              = sourceBuffer->iWidth;
+  iHeight             = sourceBuffer->iHeight;
+
   // Input is the VPU decoded frame
-  task.input.width    = frameInfo->pExtInfo->nFrmWidth;
-  task.input.height   = frameInfo->pExtInfo->nFrmHeight;
+  task.input.width    = iWidth;
+  task.input.height   = iHeight;
   task.input.format   = IPU_PIX_FMT_NV12;
-  task.input.paddr    = (int)frameInfo->pDisplayFrameBuf->pbufY;
+  task.input.paddr    = (int)sourceBuffer->data[1];
 
   // Output is our IPU buffer
-  task.output.width   = frameInfo->pExtInfo->nFrmWidth;
-  task.output.height  = frameInfo->pExtInfo->nFrmHeight;
+  task.output.width   = iWidth;
+  task.output.height  = iHeight;
   task.output.format  = IPU_PIX_FMT_NV12;
   task.output.rotate  = 0;
-  task.output.paddr   = m_pPhyAddr;
+  task.output.paddr   = (int)data[1];
 
   // Fill previous buffer address
   task.input.paddr_n = (int)previousPhyAddr;
 
-  switch (frameInfo->eFieldType)
+  /*
+  switch (fieldType)
   {
+  case VPU_FIELD_TOP:
+    task.input.deinterlace.enable    = 1;
+    task.input.deinterlace.motion    = task.input.paddr_n?LOW_MOTION:HIGH_MOTION;
+    task.input.deinterlace.field_fmt = IPU_DEINTERLACE_FIELD_TOP;
+    break;
+  case VPU_FIELD_BOTTOM:
+    task.input.deinterlace.enable    = 1;
+    task.input.deinterlace.motion    = task.input.paddr_n?LOW_MOTION:HIGH_MOTION;
+    task.input.deinterlace.field_fmt = IPU_DEINTERLACE_FIELD_BOTTOM;
+    break;
   case VPU_FIELD_TB:
     task.input.deinterlace.enable    = 1;
     task.input.deinterlace.motion    = task.input.paddr_n?LOW_MOTION:HIGH_MOTION;
@@ -1029,28 +1070,48 @@ bool CDVDVideoCodecIPUBuffer::Process(int fd, VpuDecOutFrameInfo *frameInfo, uin
     task.input.deinterlace.motion    = MED_MOTION;
     break;
   }
+  */
+  switch (fieldType)
+  {
+  case VPU_FIELD_TOP:
+  case VPU_FIELD_BOTTOM:
+  case VPU_FIELD_TB:
+  case VPU_FIELD_BT:
+    task.input.deinterlace.enable    = 1;
+    task.input.deinterlace.motion    = task.input.paddr_n?LOW_MOTION:HIGH_MOTION;
+    break;
+  case VPU_FIELD_NONE:
+  default:
+    task.input.deinterlace.enable    = 0;
+    task.input.deinterlace.motion    = MED_MOTION;
+    break;
+  }
 
   int ret = ioctl(fd, IPU_QUEUE_TASK, &task);
   if (ret < 0)
   {
-    m_bAvail = true;
     CLog::Log(LOGERROR, "IPU task failed: %s\n", strerror(errno));
     return false;
   }
 
-  m_bAvail = false;
+  m_source = sourceBuffer;
+  m_source->Lock();
+
   return true;
 }
 
 bool CDVDVideoCodecIPUBuffer::Allocate(int fd, int width, int height, int nAlign)
 {
-  m_nWidth = Align(width,FRAME_ALIGN);
-  m_nHeight = Align(height,(2*FRAME_ALIGN));
+  uint8_t *phyAddr, *virtAddr;
+  m_iWidth = Align(width,FRAME_ALIGN);
+  m_iHeight = Align(height,(2*FRAME_ALIGN));
   // NV12 == 12 bpp
-  m_nSize = m_nWidth*m_nHeight*12/8;
+  m_nSize = m_iWidth*m_iHeight*12/8;
   m_pPhyAddr = m_nSize;
 
-  CLog::Log(LOGNOTICE, "IPU: alloc %d bytes for frame of %dx%d\n", m_nSize, m_nWidth, m_nHeight);
+  data[0] = data[1] = NULL;
+
+  CLog::Log(LOGNOTICE, "IPU: alloc %d bytes for frame of %dx%d\n", m_nSize, m_iWidth, m_iHeight);
 
   int r = ioctl(fd, IPU_ALLOC, &m_pPhyAddr);
   if (r < 0)
@@ -1060,8 +1121,10 @@ bool CDVDVideoCodecIPUBuffer::Allocate(int fd, int width, int height, int nAlign
     return false;
   }
 
-  m_pVirtAddr = mmap(0, m_nSize, PROT_READ | PROT_WRITE, MAP_SHARED,
-                     fd, m_pPhyAddr);
+  data[1] = (uint8_t*)m_pPhyAddr;
+
+  m_pVirtAddr = (uint8_t*)mmap(0, m_nSize, PROT_READ | PROT_WRITE, MAP_SHARED,
+                               fd, m_pPhyAddr);
   if (!m_pVirtAddr)
   {
     CLog::Log(LOGERROR, "IPU mmap failed: disable deinterlacing: %s\n", strerror(errno));
@@ -1070,8 +1133,8 @@ bool CDVDVideoCodecIPUBuffer::Allocate(int fd, int width, int height, int nAlign
 
   if (nAlign>1)
   {
-    m_pPhyAddr = (int)Align(m_pPhyAddr, nAlign);
-    m_pVirtAddr = (void*)Align(m_pVirtAddr, nAlign);
+    data[1] = (uint8_t*)Align(m_pPhyAddr, nAlign);
+    data[0] = (uint8_t*)Align(m_pVirtAddr, nAlign);
   }
 
   return true;
@@ -1079,6 +1142,7 @@ bool CDVDVideoCodecIPUBuffer::Allocate(int fd, int width, int height, int nAlign
 
 bool CDVDVideoCodecIPUBuffer::Free(int fd)
 {
+  CSingleLock lock(CDVDVideoCodecIMX::m_codecBufferLock);
   bool ret = true;
 
   // Unmap virtual memory
@@ -1105,6 +1169,10 @@ bool CDVDVideoCodecIPUBuffer::Free(int fd)
 
     m_pPhyAddr = 0;
   }
+
+  data[0] = data[1] = NULL;
+
+  SAFE_RELEASE(m_source);
 
   return ret;
 }
@@ -1140,11 +1208,12 @@ bool CDVDVideoCodecIPUBuffers::Init(int width, int height, int numBuffers, int n
   }
 
   m_bufferNum = numBuffers;
-  m_buffers = new CDVDVideoCodecIPUBuffer[m_bufferNum];
+  m_buffers = new CDVDVideoCodecIPUBuffer*[m_bufferNum];
 
   for (int i=0; i < m_bufferNum; i++ )
   {
-    if (!m_buffers[i].Allocate(m_ipuHandle, width, height, nAlign))
+    m_buffers[i] = new CDVDVideoCodecIPUBuffer;
+    if (!m_buffers[i]->Allocate(m_ipuHandle, width, height, nAlign))
     {
       Close();
       return false;
@@ -1167,7 +1236,8 @@ bool CDVDVideoCodecIPUBuffers::Close()
   {
     for (int i=0; i < m_bufferNum; i++)
     {
-      if (!m_buffers[i].Free(m_ipuHandle))
+      if (m_buffers[i] == NULL ) continue;
+      if (!m_buffers[i]->Free(m_ipuHandle))
         ret = false;
     }
 
@@ -1183,6 +1253,9 @@ bool CDVDVideoCodecIPUBuffers::Close()
 
   if (m_buffers)
   {
+    for (int i=0; i < m_bufferNum; i++)
+      SAFE_RELEASE(m_buffers[i]);
+
     delete m_buffers;
     m_buffers = NULL;
   }
@@ -1192,24 +1265,26 @@ bool CDVDVideoCodecIPUBuffers::Close()
   return true;
 }
 
-CDVDVideoCodecIPUBuffer *CDVDVideoCodecIPUBuffers::Process(VpuDecOutFrameInfo *frameInfo, CDVDVideoCodecIMXBuffer *vpuBuffer)
+CDVDVideoCodecIPUBuffer *
+CDVDVideoCodecIPUBuffers::Process(CDVDVideoCodecBuffer *sourceBuffer,
+                                  VpuFieldType fieldType)
 {
   CDVDVideoCodecIPUBuffer *target = NULL;
 
   for (int i=0; i < m_bufferNum; i++ )
   {
-    if (!m_buffers[i].IsAvail()) continue;
+    if (!m_buffers[i]->IsAvail()) continue;
 
     // IPU process:
     // SRC: Current VPU physical buffer address + last VPU buffer address
     // DST: IPU buffer[i]
     uint8_t *prevPhyAddr = NULL;
     if (m_lastVpuBuffer)
-      prevPhyAddr = m_lastVpuBuffer->PhyAddr();
+      prevPhyAddr = m_lastVpuBuffer->data[1];
 
-    if (m_buffers[i].Process(m_ipuHandle, frameInfo, prevPhyAddr))
+    if (m_buffers[i]->Process(m_ipuHandle, sourceBuffer, prevPhyAddr, fieldType))
     {
-      target = m_buffers + i;
+      target = m_buffers[i];
       break;
     }
   }
@@ -1222,7 +1297,7 @@ CDVDVideoCodecIPUBuffer *CDVDVideoCodecIPUBuffers::Process(VpuDecOutFrameInfo *f
   }
 
   SAFE_RELEASE(m_lastVpuBuffer);
-  m_lastVpuBuffer = vpuBuffer;
+  m_lastVpuBuffer = sourceBuffer;
   if (m_lastVpuBuffer != NULL)
     m_lastVpuBuffer->Lock();
 
