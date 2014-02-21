@@ -28,7 +28,9 @@
 #include <sys/ioctl.h>
 #include "utils/log.h"
 #include "utils/StringUtils.h"
+#include "utils/Environment.h"
 #include "guilib/gui3d.h"
+#include "windowing/WindowingFactory.h"
 
 CEGLNativeTypeIMX::CEGLNativeTypeIMX()
 {
@@ -202,7 +204,22 @@ bool CEGLNativeTypeIMX::GetPreferredResolution(RESOLUTION_INFO *res) const
 
 bool CEGLNativeTypeIMX::ShowWindow(bool show)
 {
-  // CLog::Log(LOGERROR, "%s - call CEGLNativeTypeIMX::ShowWindow with %d.\n", __FUNCTION__, show);
+  // Force vsync depending on FB_MULTI_BUFFER
+  EGLBoolean status;
+  EGLint result;
+
+  std::string fb_buffers = CEnvironment::getenv("FB_MULTI_BUFFER");
+  if (fb_buffers.empty())
+    status = eglSwapInterval(g_Windowing.GetEGLDisplay(), 0);
+  else
+  {
+    CLog::Log(LOGNOTICE, "%s - FB_MULTI_BUFFER is set",__FUNCTION__);
+    status = eglSwapInterval(g_Windowing.GetEGLDisplay(), 1);
+  }
+  result = eglGetError();
+  if(result != EGL_SUCCESS)
+    CLog::Log(LOGERROR, "EGL error in %s: %x",__FUNCTION__, result);
+
   return false;
 }
 
