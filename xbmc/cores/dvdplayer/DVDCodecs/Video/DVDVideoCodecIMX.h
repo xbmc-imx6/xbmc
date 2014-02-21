@@ -28,7 +28,7 @@
 
 
 //#define IMX_PROFILE
-//#define TRACE_FRAMES
+#define TRACE_FRAMES
 
 // FIXME TODO Develop real proper CVPUBuffer class
 #define VPU_DEC_MAX_NUM_MEM_NUM 20
@@ -62,7 +62,7 @@ public:
   virtual long             Release();
   virtual bool             IsValid();
 
-  bool                     Rendered();
+  bool                     Rendered() const;
   void                     Queue(VpuDecOutFrameInfo *frameInfo);
   VpuDecRetCode            ReleaseFramebuffer(VpuDecHandle *handle);
   void                     SetPts(double pts);
@@ -81,10 +81,16 @@ protected:
   double                   m_pts;
 };
 
+// Shared buffer that holds an IPU allocated memory block and serves as target
+// for IPU operations such as deinterlacing, rotation or color conversion.
 class CDVDVideoCodecIPUBuffer : public CDVDVideoCodecBuffer
 {
 public:
+#ifdef TRACE_FRAMES
+  CDVDVideoCodecIPUBuffer(int idx);
+#else
   CDVDVideoCodecIPUBuffer();
+#endif
 
   // reference counting
   virtual void             Lock();
@@ -92,9 +98,10 @@ public:
   virtual bool             IsValid();
 
   // Returns whether the buffer is ready to be used
-  bool                     IsAvail() const { return m_source != NULL; }
-  bool                     Process(int fd, CDVDVideoCodecBuffer *sourceBuffer,
-                                   uint8_t *previousPhyAddr, VpuFieldType fieldType);
+  bool                     Rendered() const { return m_source == NULL; }
+  bool                     Process(int fd, CDVDVideoCodecBuffer *currentBuffer,
+                                   CDVDVideoCodecBuffer *previousBuffer, VpuFieldType fieldType);
+  void                     ReleaseFrameBuffer();
 
   bool                     Allocate(int fd, int width, int height, int nAlign);
   bool                     Free(int fd);
@@ -103,8 +110,11 @@ private:
   ~CDVDVideoCodecIPUBuffer();
 
 private:
+#ifdef TRACE_FRAMES
+  int                      m_idx;
+#endif
   long                     m_refs;
-  CDVDVideoCodecIMXBuffer *m_source;
+  CDVDVideoCodecBuffer    *m_source;
   int                      m_pPhyAddr;
   uint8_t                 *m_pVirtAddr;
   int                      m_iWidth;
@@ -112,6 +122,9 @@ private:
   int                      m_nSize;
 };
 
+// Collection class that manages a pool of IPU buffers that are used for
+// deinterlacing. In future they can also serve rotation or color conversion
+// buffers.
 class CDVDVideoCodecIPUBuffers
 {
   public:
@@ -129,7 +142,7 @@ class CDVDVideoCodecIPUBuffers
     int                       m_ipuHandle;
     int                       m_bufferNum;
     CDVDVideoCodecIPUBuffer **m_buffers;
-    CDVDVideoCodecIMXBuffer  *m_lastVpuBuffer;
+    CDVDVideoCodecBuffer     *m_lastBuffer;
 };
 
 
