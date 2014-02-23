@@ -136,7 +136,7 @@ class CDVDVideoCodecIPUBuffers
     bool Close();
 
     CDVDVideoCodecIPUBuffer *Process(CDVDVideoCodecBuffer *sourceBuffer,
-                                     VpuFieldType fieldType);
+                                     VpuFieldType fieldType, bool lowMotion);
 
   private:
     int                       m_ipuHandle;
@@ -192,6 +192,7 @@ protected:
 //  VpuMemDesc         *m_outputBuffers;     // Table of buffers out of VPU (used to call properly VPU_DecOutFrameDisplayed)
   int                 m_frameCounter;      // Decoded frames counter
   bool                m_usePTS;            // State whether pts out of decoding process should be used
+  int                 m_modeDeinterlace;   // Deinterlacer mode: 0=off, 1=high, 2..=low
   VpuDecOutFrameInfo  m_frameInfo;
   CBitstreamConverter *m_converter;
   bool                m_convert_bitstream;
