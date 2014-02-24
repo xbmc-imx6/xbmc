@@ -312,6 +312,8 @@ bool CDVDVideoCodecIMX::VpuAllocFrameBuffers(void)
     if (!m_deinterlacer.Init(m_initInfo.nPicWidth, m_initInfo.nPicHeight, GetAllowedReferences()+1, nAlign))
       CLog::Log(LOGWARNING, "IMX: Failed to initialize IPU buffers: deinterlacing disabled\n");
   }
+  else
+    m_modeDeinterlace = 0;
 
   return true;
 }
@@ -544,6 +546,7 @@ int CDVDVideoCodecIMX::Decode(BYTE *pData, int iSize, double dts, double pts)
   int demuxer_bytes = iSize;
   uint8_t *demuxer_content = pData;
   bool retry = false;
+  bool frameConsumed = false;
   int idx;
 
 #ifdef IMX_PROFILE
@@ -683,6 +686,7 @@ int CDVDVideoCodecIMX::Decode(BYTE *pData, int iSize, double dts, double pts)
             CLog::Log(LOGERROR, "%s - could not find frame buffer\n", __FUNCTION__);
           }
         }
+        frameConsumed = true;
       } //VPU_DEC_ONE_FRM_CONSUMED
 
       if ((decRet & VPU_DEC_OUTPUT_DIS) ||
@@ -758,6 +762,18 @@ int CDVDVideoCodecIMX::Decode(BYTE *pData, int iSize, double dts, double pts)
   if (retStatus == 0)
   {
     retStatus |= VC_BUFFER;
+  }
+
+  if (frameConsumed && !(retStatus & VC_PICTURE) && m_modeDeinterlace)
+  {
+    // Uhh, two or more fields in one picture. Check resolution and disable
+    // deinterlacing due to performance penalties
+    if ((m_initInfo.nPicWidth>1024) || (m_initInfo.nPicHeight>1024))
+    {
+      CLog::Log(LOGNOTICE, "IMX: Disable hardware deinterlacing\n");
+      m_modeDeinterlace = 0;
+      m_deinterlacer.Close();
+    }
   }
 
 #ifdef IMX_PROFILE
