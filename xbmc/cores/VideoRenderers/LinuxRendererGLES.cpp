@@ -77,10 +77,12 @@ static PFNGLEGLIMAGETARGETTEXTURE2DOESPROC glEGLImageTargetTexture2DOES;
 #endif
 
 #ifdef HAS_IMXVPU
-// GLES extension functions
-#define GL_GLEXT_PROTOTYPES
-#include <GLES/gl.h>
-#include <GLES/glext.h>
+#include "windowing/egl/EGLWrapper.h"
+#define GL_VIV_NV12 0x8FC1
+typedef void (GL_APIENTRYP PFNGLTEXDIRECTVIVMAPPROC) (GLenum Target, GLsizei Width, GLsizei Height, GLenum Format, GLvoid ** Logical, const GLuint * Physical);
+typedef void (GL_APIENTRYP PFNGLTEXDIRECTINVALIDATEVIVPROC) (GLenum Target);
+static PFNGLTEXDIRECTVIVMAPPROC glTexDirectVIVMap;
+static PFNGLTEXDIRECTINVALIDATEVIVPROC glTexDirectInvalidateVIV;
 #endif
 
 #if defined(TARGET_ANDROID)
@@ -158,6 +160,12 @@ CLinuxRendererGLES::CLinuxRendererGLES()
     eglDestroyImageKHR = (PFNEGLDESTROYIMAGEKHRPROC) CEGLWrapper::GetProcAddress("eglDestroyImageKHR");
   if (!glEGLImageTargetTexture2DOES)
     glEGLImageTargetTexture2DOES = (PFNGLEGLIMAGETARGETTEXTURE2DOESPROC) CEGLWrapper::GetProcAddress("glEGLImageTargetTexture2DOES");
+#endif
+#ifdef HAS_IMXVPU
+  if (!glTexDirectVIVMap)
+    glTexDirectVIVMap = (PFNGLTEXDIRECTVIVMAPPROC) CEGLWrapper::GetProcAddress("glTexDirectVIVMap");
+  if (!glTexDirectInvalidateVIV)
+    glTexDirectInvalidateVIV = (PFNGLTEXDIRECTINVALIDATEVIVPROC) CEGLWrapper::GetProcAddress("glTexDirectInvalidateVIV");
 #endif
 }
 
