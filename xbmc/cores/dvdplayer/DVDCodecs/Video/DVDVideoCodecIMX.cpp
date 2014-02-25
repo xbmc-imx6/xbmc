@@ -665,8 +665,6 @@ int CDVDVideoCodecIMX::Decode(BYTE *pData, int iSize, double dts, double pts)
           {
             if (pts != DVD_NOPTS_VALUE)
               m_outputBuffers[idx]->SetPts(pts);
-            else if (dts !=  DVD_NOPTS_VALUE)
-              m_outputBuffers[idx]->SetPts(dts);
           }
           else
           {
