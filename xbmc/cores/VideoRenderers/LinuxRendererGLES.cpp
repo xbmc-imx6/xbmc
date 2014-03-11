@@ -2740,15 +2740,15 @@ void CLinuxRendererGLES::UploadIMXMAPTexture(int index)
 
     YUVPLANE &plane = m_buffers[index].fields[0][0];
     CDVDVideoCodecIPUBuffers *deinterlacer = (CDVDVideoCodecIPUBuffers*)codecinfo->data[2];
-    EDEINTERLACEMODE deinterlacemode = CMediaSettings::Get().GetCurrentVideoSettings().m_DeinterlaceMode;
-    EINTERLACEMETHOD interlacemethod = CMediaSettings::Get().GetCurrentVideoSettings().m_InterlaceMethod;
 
     if (deinterlacer)
     {
+      EDEINTERLACEMODE deinterlacemode = CMediaSettings::Get().GetCurrentVideoSettings().m_DeinterlaceMode;
+
       if (deinterlacemode != VS_DEINTERLACEMODE_OFF)
       {
-        deinterlacer->SetEnabled(true);
         CDVDVideoCodecBuffer *deint;
+        EINTERLACEMETHOD interlacemethod = CMediaSettings::Get().GetCurrentVideoSettings().m_InterlaceMethod;
         deint = deinterlacer->Process(codecinfo, (VpuFieldType)(int)codecinfo->data[3],
                                       interlacemethod == VS_INTERLACEMETHOD_DEINTERLACE);
         if (deint)
@@ -2759,8 +2759,6 @@ void CLinuxRendererGLES::UploadIMXMAPTexture(int index)
           codecinfo = buf.codecinfo;
         }
       }
-      else
-        deinterlacer->SetEnabled(false);
     }
 
     glActiveTexture(GL_TEXTURE0);
@@ -2931,7 +2929,15 @@ bool CLinuxRendererGLES::Supports(EINTERLACEMETHOD method)
   if(method == VS_INTERLACEMETHOD_AUTO)
     return true;
 
-#ifndef HAS_IMXVPU
+  if(m_renderMethod & RENDER_IMXMAP)
+  {
+    if(method == VS_INTERLACEMETHOD_DEINTERLACE
+    || method == VS_INTERLACEMETHOD_DEINTERLACE_HALF)
+      return true;
+    else
+      return false;
+  }
+
 #if defined(__i386__) || defined(__x86_64__)
   if(method == VS_INTERLACEMETHOD_DEINTERLACE
   || method == VS_INTERLACEMETHOD_DEINTERLACE_HALF
@@ -2940,11 +2946,6 @@ bool CLinuxRendererGLES::Supports(EINTERLACEMETHOD method)
   if(method == VS_INTERLACEMETHOD_SW_BLEND)
 #endif
     return true;
-#else
-  if(method == VS_INTERLACEMETHOD_DEINTERLACE
-  || method == VS_INTERLACEMETHOD_DEINTERLACE_HALF)
-    return true;
-#endif
 
   return false;
 }
@@ -2985,7 +2986,10 @@ EINTERLACEMETHOD CLinuxRendererGLES::AutoInterlaceMethod()
   if(m_renderMethod & RENDER_CVREF)
     return VS_INTERLACEMETHOD_NONE;
 
-#if defined(__i386__) || defined(__x86_64__) || defined(HAS_IMXVPU)
+  if(m_renderMethod & RENDER_IMXMAP)
+    return VS_INTERLACEMETHOD_DEINTERLACE_HALF;
+
+#if defined(__i386__) || defined(__x86_64__)
   return VS_INTERLACEMETHOD_DEINTERLACE_HALF;
 #else
   return VS_INTERLACEMETHOD_SW_BLEND;
