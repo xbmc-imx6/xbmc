@@ -29,7 +29,7 @@
 #include "cores/VideoRenderers/RenderFormats.h"
 #include "DVDVideoCodecInfo.h"
 
-struct DVDCodecAvailableType 
+struct DVDCodecAvailableType
 {
   AVCodecID codec;
   const char* setting;
@@ -92,9 +92,10 @@ struct DVDVideoPicture
     struct {
       CDVDMediaCodecInfo *mediacodec;
     };
-  
+
     struct {
       CDVDVideoCodecBuffer *codecinfo;
+      bool doubled;
     };
 
   };
@@ -194,7 +195,7 @@ public:
   /*
    * returns true if successfull
    * the data is cleared to zero
-   */ 
+   */
   virtual bool ClearPicture(DVDVideoPicture* pDvdVideoPicture)
   {
     memset(pDvdVideoPicture, 0, sizeof(DVDVideoPicture));
@@ -280,7 +281,7 @@ public:
   virtual unsigned GetAllowedReferences() { return 0; }
 
   /**
-   * Hide or Show Settings depending on the currently running hardware 
+   * Hide or Show Settings depending on the currently running hardware
    *
    */
    static bool IsSettingVisible(const std::string &condition, const std::string &value, const std::string &settingId);

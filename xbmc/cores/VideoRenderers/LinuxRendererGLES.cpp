@@ -2747,8 +2747,7 @@ void CLinuxRendererGLES::UploadIMXMAPTexture(int index)
       {
         CDVDVideoCodecBuffer *deint;
         EINTERLACEMETHOD interlacemethod = CMediaSettings::Get().GetCurrentVideoSettings().m_InterlaceMethod;
-        deint = deinterlacer->Process(codecinfo, (VpuFieldType)(int)codecinfo->data[3],
-                                      interlacemethod == VS_INTERLACEMETHOD_DEINTERLACE);
+        deint = deinterlacer->Process(codecinfo, interlacemethod == VS_INTERLACEMETHOD_DEINTERLACE, buf.doubled);
         if (deint)
         {
           SAFE_RELEASE(buf.codecinfo);
@@ -2757,6 +2756,10 @@ void CLinuxRendererGLES::UploadIMXMAPTexture(int index)
           codecinfo = buf.codecinfo;
         }
       }
+      else
+        // Disable deinterlacer. This state is used in the decoder to not feed
+        // additional picture in case double rate is enabled.
+        deinterlacer->Disable();
     }
 
     glActiveTexture(GL_TEXTURE0);
@@ -3071,13 +3074,15 @@ void CLinuxRendererGLES::AddProcessor(CDVDMediaCodecInfo *mediacodec, int index)
 }
 #endif
 
-void CLinuxRendererGLES::AddProcessor(CDVDVideoCodecBuffer *codecinfo, int index)
+void CLinuxRendererGLES::AddProcessor(CDVDVideoCodecBuffer *codecinfo, bool doubled, int index)
 {
   YUVBUFFER &buf = m_buffers[index];
 
   SAFE_RELEASE(buf.codecinfo);
   buf.codecinfo = codecinfo;
-
+#ifdef HAS_IMXVPU
+  buf.doubled = doubled;
+#endif
   if (codecinfo)
     codecinfo->Lock();
 }

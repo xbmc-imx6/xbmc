@@ -72,6 +72,7 @@ public:
   void                     SetPts(double pts);
   double                   GetPts(void) const;
   CDVDVideoCodecIMXBuffer *GetPreviousBuffer() const;
+  VpuFieldType             GetFieldType() const;
 
 private:
   // private because we are reference counted
@@ -83,6 +84,7 @@ private:
 #endif
   long                     m_refs;
   VpuFrameBuffer          *m_frameBuffer;
+  VpuFieldType             m_fieldType;
   bool                     m_rendered;
   double                   m_pts;
   CDVDVideoCodecIMXBuffer *m_previousBuffer; // Holds a the reference counted
@@ -108,8 +110,7 @@ public:
   // Returns whether the buffer is ready to be used
   bool                     Rendered() const { return m_source == NULL; }
   bool                     Process(int fd, CDVDVideoCodecIMXBuffer *buffer,
-                                   VpuFieldType fieldType, int fieldFmt,
-                                   bool lowMotion);
+                                   bool lowMotion, int fieldFmt);
   void                     ReleaseFrameBuffer();
 
   bool                     Allocate(int fd, int width, int height, int nAlign);
@@ -131,11 +132,22 @@ private:
   int                      m_nSize;
 };
 
+
 // Collection class that manages a pool of IPU buffers that are used for
 // deinterlacing. In future they can also serve rotation or color conversion
 // buffers.
 class CDVDVideoCodecIPUBuffers
 {
+  private:
+    enum State
+    {
+      STATE_NONE               = 0x00,
+      STATE_ENABLED            = 0x01,
+      STATE_DOUBLE_RATE        = 0x02,
+      STATE_DOUBLE_RATE_ACTIVE = STATE_ENABLED |
+                                 STATE_DOUBLE_RATE
+    };
+
   public:
     CDVDVideoCodecIPUBuffers();
     ~CDVDVideoCodecIPUBuffers();
@@ -144,14 +156,23 @@ class CDVDVideoCodecIPUBuffers
     bool Reset();
     bool Close();
 
+    void Enable() { m_state |= STATE_ENABLED; }
+    void Disable() { m_state &= ~STATE_ENABLED; }
+    bool IsEnabled() const { return m_state & STATE_ENABLED; }
+
+    void EnableDoubleRate() { m_state |= STATE_DOUBLE_RATE; }
+    void DisableDoubleRate() { m_state &= ~STATE_DOUBLE_RATE; }
+    bool IsDoubleRateActive() const;
+
     CDVDVideoCodecIPUBuffer *Process(CDVDVideoCodecBuffer *sourceBuffer,
-                                     VpuFieldType fieldType, bool lowMotion);
+                                     bool lowMotion, bool doubledFrame);
 
   private:
     int                       m_ipuHandle;
     int                       m_bufferNum;
     CDVDVideoCodecIPUBuffer **m_buffers;
-    int                       m_currentFieldFmt;
+    int                       m_state;
+    int                       m_fieldFmt;
 };
 
 
@@ -204,7 +225,6 @@ protected:
   CDVDVideoCodecIMXBuffer  *m_lastBuffer;
   VpuMemDesc               *m_extraMem;          // Table of allocated extra Memory
   int                       m_frameCounter;      // Decoded frames counter
-  bool                      m_usePTS;            // State whether pts out of decoding process should be used
   VpuDecOutFrameInfo        m_frameInfo;
   CBitstreamConverter      *m_converter;
   bool                      m_convert_bitstream;
@@ -212,4 +232,5 @@ protected:
   double                    m_previousPts;       // Enable to keep pts when needed
   bool                      m_frameReported;     // State whether the frame consumed event will be reported by libfslvpu
   double                    m_dts;               // Current dts
+  int                       m_pictureRepeatCnt;
 };

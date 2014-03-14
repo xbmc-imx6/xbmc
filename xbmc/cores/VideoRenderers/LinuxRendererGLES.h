@@ -175,7 +175,7 @@ public:
   // mediaCodec
   virtual void         AddProcessor(CDVDMediaCodecInfo *mediacodec, int index);
 #endif
-  virtual void         AddProcessor(CDVDVideoCodecBuffer *codecinfo, int index);
+  virtual void         AddProcessor(CDVDVideoCodecBuffer *codecinfo, bool doubled, int index);
 
 protected:
   virtual void Render(DWORD flags, int index);
@@ -299,6 +299,9 @@ protected:
     CDVDMediaCodecInfo *mediacodec;
 #endif
     CDVDVideoCodecBuffer *codecinfo;
+#ifdef HAS_IMXVPU
+    bool doubled;
+#endif
   };
 
   typedef YUVBUFFER          YUVBUFFERS[NUM_BUFFERS];

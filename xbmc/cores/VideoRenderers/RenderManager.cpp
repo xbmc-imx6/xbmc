@@ -930,7 +930,7 @@ int CXBMCRenderManager::AddVideoPicture(DVDVideoPicture& pic)
 #endif
 #ifdef HAS_IMXVPU
   else if(pic.format == RENDER_FMT_YV12_BUFFER || pic.format == RENDER_FMT_IMXMAP)
-    m_pRenderer->AddProcessor(pic.codecinfo, index);
+    m_pRenderer->AddProcessor(pic.codecinfo, pic.doubled, index);
 #endif
 
   m_pRenderer->ReleaseImage(index, false);

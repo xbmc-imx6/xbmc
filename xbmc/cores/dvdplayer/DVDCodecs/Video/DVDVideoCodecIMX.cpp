@@ -44,7 +44,6 @@
 #define GET_PHYS_ADDR(buf) (buf)->data[1]
 #define GET_VIRT_ADDR(buf) (buf)->data[0]
 #define GET_DEINTERLACER(buf) (buf)->data[2]
-#define GET_FIELDTYPE(buf) (buf)->data[3]
 
 // Experiments show that we need at least one more (+1) V4L buffer than the min value returned by the VPU
 const int CDVDVideoCodecIMX::m_extraVpuBuffers = 6;
@@ -345,6 +344,9 @@ bool CDVDVideoCodecIMX::VpuAllocFrameBuffers(void)
     {
       for (int i=0; i<m_vpuFrameBufferNum; i++)
         GET_DEINTERLACER(m_outputBuffers[i]) = (uint8_t*)&m_deinterlacer;
+
+      if (m_initInfo.nPicWidth<1024 && m_initInfo.nPicHeight<1024)
+        m_deinterlacer.EnableDoubleRate();
     }
   }
 
@@ -363,15 +365,11 @@ CDVDVideoCodecIMX::CDVDVideoCodecIMX()
   m_dropState = false;
   m_convert_bitstream = false;
   m_frameCounter = 0;
-  m_usePTS = true;
-  if (getenv("IMX_NOPTS") != NULL)
-  {
-    m_usePTS = false;
-  }
   m_converter = NULL;
   m_convert_bitstream = false;
   m_bytesToBeConsumed = 0;
   m_previousPts = DVD_NOPTS_VALUE;
+  m_pictureRepeatCnt = 0;
 }
 
 CDVDVideoCodecIMX::~CDVDVideoCodecIMX()
@@ -507,6 +505,8 @@ bool CDVDVideoCodecIMX::Open(CDVDStreamInfo &hints, CDVDCodecOptions &options)
     return false;
   }
 
+  m_pictureRepeatCnt = 0;
+
   return true;
 }
 
@@ -598,6 +598,11 @@ int CDVDVideoCodecIMX::Decode(BYTE *pData, int iSize, double dts, double pts)
   static unsigned long long previous, current;
   unsigned long long before_dec;
 #endif
+
+  // If double rate is enabled and a last buffer is there, send an intermediate
+  // picture
+  if (m_pictureRepeatCnt && m_lastBuffer)
+    return VC_PICTURE;
 
   if (!m_vpuHandle)
   {
@@ -870,6 +875,7 @@ void CDVDVideoCodecIMX::Reset()
   m_deinterlacer.Reset();
   m_bytesToBeConsumed = 0;
   m_previousPts = DVD_NOPTS_VALUE;
+  m_pictureRepeatCnt = 0;
 
   // Flush VPU
   ret = VPU_DecFlushAll(m_vpuHandle);
@@ -927,13 +933,22 @@ bool CDVDVideoCodecIMX::GetPicture(DVDVideoPicture* pDvdVideoPicture)
   {
     CDVDVideoCodecIMXBuffer *buffer = m_outputBuffers[idx];
 
+    if (m_pictureRepeatCnt)
+    {
+      // Interpolate pts and send the last buffer again
+      pDvdVideoPicture->pts = (buffer->GetPts() + m_lastBuffer->GetPts())*0.5;
+      pDvdVideoPicture->doubled = true;
+      pDvdVideoPicture->codecinfo = m_lastBuffer;
+      pDvdVideoPicture->codecinfo->Lock();
+      m_pictureRepeatCnt--;
+#ifdef TRACE_FRAMES
+      CLog::Log(LOGDEBUG, "+  %02d  pts %f  (GP)\n", idx, pDvdVideoPicture->pts);
+#endif
+      return true;
+    }
+
     pDvdVideoPicture->pts = buffer->GetPts();
     pDvdVideoPicture->dts = m_dts;
-    if (!m_usePTS)
-    {
-      pDvdVideoPicture->pts = DVD_NOPTS_VALUE;
-      pDvdVideoPicture->dts = DVD_NOPTS_VALUE;
-    }
 
     buffer->Queue(&m_frameInfo, m_lastBuffer);
 
@@ -950,8 +965,17 @@ bool CDVDVideoCodecIMX::GetPicture(DVDVideoPicture* pDvdVideoPicture)
       GET_DEINTERLACER(buffer) = NULL;
     */
 
+    pDvdVideoPicture->doubled = false;
     pDvdVideoPicture->codecinfo = buffer;
     pDvdVideoPicture->codecinfo->Lock();
+
+    if (m_deinterlacer.IsDoubleRateActive())
+    {
+      // Both pts are required to be able to interpolate the extra picture pts
+      if (m_lastBuffer && (m_lastBuffer->GetPts() != DVD_NOPTS_VALUE) &&
+          (buffer->GetPts() != DVD_NOPTS_VALUE))
+      m_pictureRepeatCnt = 1;
+    }
 
     // Save last buffer
     if (m_lastBuffer)
@@ -1075,11 +1099,11 @@ void CDVDVideoCodecIMXBuffer::Queue(VpuDecOutFrameInfo *frameInfo,
   if (m_previousBuffer)
     m_previousBuffer->Lock();
 
-  iWidth  = frameInfo->pExtInfo->nFrmWidth;
-  iHeight = frameInfo->pExtInfo->nFrmHeight;
+  iWidth              = frameInfo->pExtInfo->nFrmWidth;
+  iHeight             = frameInfo->pExtInfo->nFrmHeight;
+  m_fieldType         = frameInfo->eFieldType;
   GET_VIRT_ADDR(this) = m_frameBuffer->pbufVirtY;
   GET_PHYS_ADDR(this) = m_frameBuffer->pbufY;
-  GET_FIELDTYPE(this) = (uint8_t*)frameInfo->eFieldType;
 }
 
 VpuDecRetCode CDVDVideoCodecIMXBuffer::ReleaseFramebuffer(VpuDecHandle *handle)
@@ -1118,6 +1142,11 @@ double CDVDVideoCodecIMXBuffer::GetPts(void) const
 CDVDVideoCodecIMXBuffer *CDVDVideoCodecIMXBuffer::GetPreviousBuffer() const
 {
   return m_previousBuffer;
+}
+
+VpuFieldType CDVDVideoCodecIMXBuffer::GetFieldType() const
+{
+  return m_fieldType;
 }
 
 CDVDVideoCodecIMXBuffer::~CDVDVideoCodecIMXBuffer()
@@ -1186,8 +1215,7 @@ bool CDVDVideoCodecIPUBuffer::IsValid()
 }
 
 bool CDVDVideoCodecIPUBuffer::Process(int fd, CDVDVideoCodecIMXBuffer *buffer,
-                                      VpuFieldType fieldType, int fieldFmt,
-                                      bool lowMotion)
+                                      bool lowMotion, int fieldFmt)
 {
   CDVDVideoCodecIMXBuffer *previousBuffer;
   struct ipu_task task;
@@ -1231,20 +1259,6 @@ bool CDVDVideoCodecIPUBuffer::Process(int fd, CDVDVideoCodecIMXBuffer *buffer,
   task.input.deinterlace.enable = 1;
   task.input.deinterlace.field_fmt = fieldFmt;
 
-  switch (fieldType)
-  {
-  case VPU_FIELD_TOP:
-  case VPU_FIELD_TB:
-    task.input.deinterlace.field_fmt |= IPU_DEINTERLACE_FIELD_TOP;
-    break;
-  case VPU_FIELD_BOTTOM:
-  case VPU_FIELD_BT:
-    task.input.deinterlace.field_fmt |= IPU_DEINTERLACE_FIELD_BOTTOM;
-    break;
-  default:
-    break;
-  }
-
 #ifdef IMX_PROFILE
   unsigned int time = XbmcThreads::SystemClockMillis();
 #endif
@@ -1262,8 +1276,8 @@ bool CDVDVideoCodecIPUBuffer::Process(int fd, CDVDVideoCodecIMXBuffer *buffer,
 
   // Remember the source buffer. This is actually not necessary since the output
   // buffer is the one that is used by the renderer. But keep it bound for now
-  // since this state is used in IsValid which then needs to become a flag in
-  // this class.
+  // since this state is used in IsValid which otherwise needs to become a flag
+  // in this class.
   m_source = buffer;
   m_source->Lock();
 
@@ -1366,7 +1380,8 @@ CDVDVideoCodecIPUBuffers::CDVDVideoCodecIPUBuffers()
   : m_ipuHandle(0)
   , m_bufferNum(0)
   , m_buffers(NULL)
-  , m_currentFieldFmt(0)
+  , m_state(STATE_NONE)
+  , m_fieldFmt(0)
 {
 }
 
@@ -1394,7 +1409,6 @@ bool CDVDVideoCodecIPUBuffers::Init(int width, int height, int numBuffers, int n
 
   m_bufferNum = numBuffers;
   m_buffers = new CDVDVideoCodecIPUBuffer*[m_bufferNum];
-  m_currentFieldFmt = 0;
 
   for (int i=0; i < m_bufferNum; i++)
   {
@@ -1417,7 +1431,6 @@ bool CDVDVideoCodecIPUBuffers::Reset()
 {
   for (int i=0; i < m_bufferNum; i++)
     m_buffers[i]->ReleaseFrameBuffer();
-  m_currentFieldFmt = 0;
 }
 
 bool CDVDVideoCodecIPUBuffers::Close()
@@ -1456,16 +1469,27 @@ bool CDVDVideoCodecIPUBuffers::Close()
   return true;
 }
 
+inline bool CDVDVideoCodecIPUBuffers::IsDoubleRateActive() const
+{
+  // Must be enabled and double frame activated
+  return (m_state & STATE_DOUBLE_RATE_ACTIVE) == STATE_DOUBLE_RATE_ACTIVE;
+}
+
 CDVDVideoCodecIPUBuffer *
-CDVDVideoCodecIPUBuffers::Process(CDVDVideoCodecBuffer *sourceBuffer,
-                                  VpuFieldType fieldType, bool lowMotion)
+CDVDVideoCodecIPUBuffers::Process(CDVDVideoCodecBuffer *sourceBuffer, bool lowMotion,
+                                  bool doubledFrame)
 {
   CDVDVideoCodecIPUBuffer *target = NULL;
+  CDVDVideoCodecIMXBuffer *buf;
   bool ret = true;
 
-  // TODO: Needs further checks on real streams
-  if (!m_bufferNum /*|| (fieldType == VPU_FIELD_NONE)*/)
+  if (!m_bufferNum)
     return NULL;
+
+  // Enable implicitely
+  Enable();
+
+  buf = static_cast<CDVDVideoCodecIMXBuffer*>(sourceBuffer);
 
   for (int i=0; i < m_bufferNum; i++ )
   {
@@ -1474,9 +1498,30 @@ CDVDVideoCodecIPUBuffers::Process(CDVDVideoCodecBuffer *sourceBuffer,
     // IPU process:
     // SRC: Current VPU physical buffer address + last VPU buffer address
     // DST: IPU buffer[i]
-    ret = m_buffers[i]->Process(m_ipuHandle, (CDVDVideoCodecIMXBuffer*)sourceBuffer,
-                                fieldType, m_currentFieldFmt/* | IPU_DEINTERLACE_RATE_EN*/,
-                                lowMotion);
+
+    int fieldFmt = 0;
+    switch (buf->GetFieldType())
+    {
+    case VPU_FIELD_TOP:
+    case VPU_FIELD_TB:
+      fieldFmt = IPU_DEINTERLACE_FIELD_TOP;
+      break;
+    case VPU_FIELD_BOTTOM:
+    case VPU_FIELD_BT:
+      fieldFmt = IPU_DEINTERLACE_FIELD_BOTTOM;
+      break;
+    default:
+     break;
+    }
+
+    if (m_state & STATE_DOUBLE_RATE)
+    {
+      fieldFmt |= IPU_DEINTERLACE_RATE_EN;
+      if (doubledFrame)
+        fieldFmt |= IPU_DEINTERLACE_RATE_FRAME1;
+    }
+
+    ret = m_buffers[i]->Process(m_ipuHandle, buf, lowMotion, fieldFmt);
     if (ret)
     {
 #ifdef TRACE_FRAMES
@@ -1493,9 +1538,6 @@ CDVDVideoCodecIPUBuffers::Process(CDVDVideoCodecBuffer *sourceBuffer,
   {
     CLog::Log(LOGERROR, "Deinterlacing: did not find free buffer, forward unprocessed frame\n");
   }
-
-  // Toggle frame index bit
-  //m_currentFieldFmt ^= IPU_DEINTERLACE_RATE_FRAME1;
 
   return target;
 }
