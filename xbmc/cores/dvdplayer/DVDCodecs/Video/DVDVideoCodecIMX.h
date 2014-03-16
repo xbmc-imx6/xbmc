@@ -26,6 +26,7 @@
 #include "threads/CriticalSection.h"
 #include "utils/BitstreamConverter.h"
 
+#include <set>
 
 //#define IMX_PROFILE
 //#define TRACE_FRAMES
@@ -68,8 +69,6 @@ public:
   bool                     Rendered() const;
   void                     Queue(VpuDecOutFrameInfo *frameInfo);
   VpuDecRetCode            ReleaseFramebuffer(VpuDecHandle *handle);
-  void                     SetPts(double pts);
-  double                   GetPts(void) const;
 
 protected:
   // private because we are reference counted
@@ -81,7 +80,6 @@ protected:
   long                     m_refs;
   VpuFrameBuffer          *m_frameBuffer;
   bool                     m_rendered;
-  double                   m_pts;
 };
 
 // Shared buffer that holds an IPU allocated memory block and serves as target
@@ -199,7 +197,5 @@ protected:
   VpuDecOutFrameInfo  m_frameInfo;
   CBitstreamConverter *m_converter;
   bool                m_convert_bitstream;
-  int                 m_bytesToBeConsumed; // Remaining bytes in VPU
-  double              m_previousPts;       // Enable to keep pts when needed
-  bool                m_frameReported;     // State whether the frame consumed event will be reported by libfslvpu
+  std::multiset<double>    m_pts;
 };

@@ -100,16 +100,6 @@ AllocFailure:
         return false;
 }
 
-int CDVDVideoCodecIMX::VpuFindBuffer(void *frameAddr)
-{
-  for (int i=0; i<m_vpuFrameBufferNum; i++)
-  {
-    if (m_vpuFrameBuffers[i].pbufY == frameAddr)
-      return i;
-  }
-  return -1;
-}
-
 bool CDVDVideoCodecIMX::VpuFreeBuffers(void)
 {
   VpuMemDesc vpuMem;
@@ -354,6 +344,16 @@ bool CDVDVideoCodecIMX::VpuAllocFrameBuffers(void)
   return true;
 }
 
+int CDVDVideoCodecIMX::VpuFindBuffer(void *frameAddr)
+{
+  for (int i=0; i<m_vpuFrameBufferNum; i++)
+  {
+    if (m_vpuFrameBuffers[i].pbufY == frameAddr)
+      return i;
+  }
+  return -1;
+}
+
 CDVDVideoCodecIMX::CDVDVideoCodecIMX()
 {
   m_pFormatName = "iMX-xxx";
@@ -376,8 +376,6 @@ CDVDVideoCodecIMX::CDVDVideoCodecIMX()
     m_modeDeinterlace = atoi(deintEntry);
   m_converter = NULL;
   m_convert_bitstream = false;
-  m_bytesToBeConsumed = 0;
-  m_previousPts = DVD_NOPTS_VALUE;
 }
 
 CDVDVideoCodecIMX::~CDVDVideoCodecIMX()
@@ -546,6 +544,9 @@ void CDVDVideoCodecIMX::Dispose(void)
   m_frameCounter = 0;
   m_deinterlacer.Close();
 
+  // Clear pts queue
+  m_pts.clear();
+
   // Clear memory
   if (m_outputBuffers != NULL)
   {
@@ -589,8 +590,7 @@ int CDVDVideoCodecIMX::Decode(BYTE *pData, int iSize, double dts, double pts)
   int demuxer_bytes = iSize;
   uint8_t *demuxer_content = pData;
   bool retry = false;
-  bool frameConsumed = false;
-  int idx;
+  bool pushPts = true;
 
 #ifdef IMX_PROFILE
   static unsigned long long previous, current;
@@ -627,8 +627,7 @@ int CDVDVideoCodecIMX::Decode(BYTE *pData, int iSize, double dts, double pts)
   ((unsigned int *)pData)[0] = htonl(iSize-4);
 */
 
-  if ((pData && iSize) ||
-     (m_bytesToBeConsumed))
+  if (pData && iSize)
   {
     if ((m_convert_bitstream) && (iSize))
     {
@@ -665,8 +664,6 @@ int CDVDVideoCodecIMX::Decode(BYTE *pData, int iSize, double dts, double pts)
 #ifdef IMX_PROFILE
       before_dec = XbmcThreads::SystemClockMillis();
 #endif
-      if (m_frameReported)
-        m_bytesToBeConsumed += inData.nSize;
       ret = VPU_DecDecodeBuf(m_vpuHandle, &inData, &decRet);
 #ifdef IMX_PROFILE
         CLog::Log(LOGDEBUG, "%s - VPU dec 0x%x decode takes : %lld\n\n", __FUNCTION__, decRet,  XbmcThreads::SystemClockMillis() - before_dec);
@@ -717,26 +714,6 @@ int CDVDVideoCodecIMX::Decode(BYTE *pData, int iSize, double dts, double pts)
         {
           CLog::Log(LOGERROR, "%s - VPU error retireving info about consummed frame (%d).\n", __FUNCTION__, ret);
         }
-        m_bytesToBeConsumed -= (frameLengthInfo.nFrameLength + frameLengthInfo.nStuffLength);
-        if (frameLengthInfo.pFrame)
-        {
-          idx = VpuFindBuffer(frameLengthInfo.pFrame->pbufY);
-          if (m_bytesToBeConsumed < 50)
-            m_bytesToBeConsumed = 0;
-          if (idx != -1)
-          {
-            if (m_previousPts != DVD_NOPTS_VALUE)
-            {
-              m_outputBuffers[idx]->SetPts(m_previousPts);
-              m_previousPts = DVD_NOPTS_VALUE;
-            }
-            else
-              m_outputBuffers[idx]->SetPts(pts);
-          }
-          else
-            CLog::Log(LOGERROR, "%s - could not find frame buffer\n", __FUNCTION__);
-        }
-        frameConsumed = true;
       } //VPU_DEC_ONE_FRM_CONSUMED
 
       if (decRet & VPU_DEC_OUTPUT_DIS)
@@ -778,6 +755,7 @@ int CDVDVideoCodecIMX::Decode(BYTE *pData, int iSize, double dts, double pts)
           CLog::Log(LOGERROR, "%s: VPU Clear frame display failure(%d)\n",__FUNCTION__,ret);
           goto out_error;
         }
+        pushPts = false;
       } //VPU_DEC_OUTPUT_MOSAIC_DIS
 
       if (decRet & VPU_DEC_OUTPUT_REPEAT)
@@ -787,14 +765,12 @@ int CDVDVideoCodecIMX::Decode(BYTE *pData, int iSize, double dts, double pts)
       if (decRet & VPU_DEC_OUTPUT_DROPPED)
       {
         CLog::Log(LOGDEBUG, "%s - Frame dropped.\n", __FUNCTION__);
-      }
-      if (decRet & VPU_DEC_NO_ENOUGH_BUF)
-      {
-          CLog::Log(LOGERROR, "%s - No frame buffer available.\n", __FUNCTION__);
+        pushPts = false;
       }
       if (decRet & VPU_DEC_SKIP)
       {
         CLog::Log(LOGDEBUG, "%s - Frame skipped.\n", __FUNCTION__);
+        pushPts = false;
       }
       if (decRet & VPU_DEC_FLUSH)
       {
@@ -809,11 +785,14 @@ int CDVDVideoCodecIMX::Decode(BYTE *pData, int iSize, double dts, double pts)
       if (decRet & VPU_DEC_NO_ENOUGH_INBUF)
       {
         // We are done with VPU decoder that time
+        CLog::Log(LOGNOTICE, "%s - Not enough data.\n", __FUNCTION__);
+        pushPts = false;
         break;
       }
       if (!(decRet & VPU_DEC_INPUT_USED))
       {
         CLog::Log(LOGERROR, "%s - input not used : addr %p  size :%d!\n", __FUNCTION__, inData.pVirAddr, inData.nSize);
+        pushPts = false;
       }
 
       if (!(decRet & VPU_DEC_OUTPUT_DIS)  &&
@@ -827,26 +806,19 @@ int CDVDVideoCodecIMX::Decode(BYTE *pData, int iSize, double dts, double pts)
         retry = true;
       }
     } while (retry == true);
+
+    if (pushPts && m_usePTS)
+    {
+      if (pts != DVD_NOPTS_VALUE)
+        m_pts.insert(pts);
+      else if (dts !=  DVD_NOPTS_VALUE)
+        m_pts.insert(dts);
+    }
   } //(pData && iSize)
 
   if (retStatus == 0)
   {
     retStatus |= VC_BUFFER;
-  }
-
-  if (m_bytesToBeConsumed > 0)
-  {
-    // Remember the current pts because the data which has just
-    // been sent to the VPU has not yet been consumed.
-    // This pts is related to the frame that will be consumed
-    // at next call...
-    m_previousPts = pts;
-    if (retStatus & VC_PICTURE)
-      // If a picture was produced and some data are still to
-      // be consumed, do not ask for additional buffer as
-      // we likely already have enough data to produce a
-      // new output frame at next call
-      retStatus &= (~VC_BUFFER);
   }
 
 #ifdef IMX_PROFILE
@@ -870,8 +842,9 @@ void CDVDVideoCodecIMX::Reset()
 
   m_frameCounter = 0;
   m_deinterlacer.Reset();
-  m_bytesToBeConsumed = 0;
-  m_previousPts = DVD_NOPTS_VALUE;
+
+  // Clear pts queue
+  m_pts.clear();
 
   // Flush VPU
   ret = VPU_DecFlushAll(m_vpuHandle);
@@ -914,18 +887,19 @@ bool CDVDVideoCodecIMX::GetPicture(DVDVideoPicture* pDvdVideoPicture)
   pDvdVideoPicture->iDisplayWidth = ((pDvdVideoPicture->iWidth * m_frameInfo.pExtInfo->nQ16ShiftWidthDivHeightRatio) + 32767) >> 16;
   pDvdVideoPicture->iDisplayHeight = pDvdVideoPicture->iHeight;
 
+  if (m_pts.size())
+  {
+    std::set<double>::iterator it = m_pts.begin();
+    pDvdVideoPicture->pts = *it;
+    m_pts.erase(it);
+  }
+  else
+    CLog::Log(LOGERROR, "%s - logic error: no PTS available", __FUNCTION__);
+
   int idx = VpuFindBuffer(m_frameInfo.pDisplayFrameBuf->pbufY);
   if (idx != -1)
   {
     CDVDVideoCodecIMXBuffer *buffer = m_outputBuffers[idx];
-    CDVDVideoCodecIPUBuffer *ipuBuffer = NULL;
-
-    pDvdVideoPicture->pts = buffer->GetPts();
-    if (!m_usePTS)
-    {
-      pDvdVideoPicture->pts = DVD_NOPTS_VALUE;
-    }
-
     buffer->Queue(&m_frameInfo);
 
 #ifdef TRACE_FRAMES
@@ -942,9 +916,7 @@ bool CDVDVideoCodecIMX::GetPicture(DVDVideoPicture* pDvdVideoPicture)
     pDvdVideoPicture->codecinfo->Lock();
   }
   else
-  {
     CLog::Log(LOGERROR, "%s - could not find frame buffer\n", __FUNCTION__);
-  }
 
   return true;
 }
@@ -977,7 +949,6 @@ CDVDVideoCodecIMXBuffer::CDVDVideoCodecIMXBuffer()
 #endif
   , m_frameBuffer(NULL)
   , m_rendered(false)
-  , m_pts(DVD_NOPTS_VALUE)
 {
 }
 
@@ -1056,18 +1027,7 @@ VpuDecRetCode CDVDVideoCodecIMXBuffer::ReleaseFramebuffer(VpuDecHandle *handle)
 #endif
   m_rendered = false;
   m_frameBuffer = NULL;
-  m_pts = DVD_NOPTS_VALUE;
   return ret;
-}
-
-void CDVDVideoCodecIMXBuffer::SetPts(double pts)
-{
-  m_pts = pts;
-}
-
-double CDVDVideoCodecIMXBuffer::GetPts(void) const
-{
-  return m_pts;
 }
 
 CDVDVideoCodecIMXBuffer::~CDVDVideoCodecIMXBuffer()
