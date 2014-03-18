@@ -528,6 +528,9 @@ void CDVDVideoCodecIMX::Dispose(void)
 
   m_frameCounter = 0;
   m_deinterlacer.Close();
+  // Clear dts queue
+  while(!m_dts.empty())
+    m_dts.pop();
 
   // Clear memory
   if (m_outputBuffers != NULL)
@@ -572,7 +575,6 @@ int CDVDVideoCodecIMX::Decode(BYTE *pData, int iSize, double dts, double pts)
   int demuxer_bytes = iSize;
   uint8_t *demuxer_content = pData;
   bool retry = false;
-  bool frameConsumed = false;
   int idx;
 
 #ifdef IMX_PROFILE
@@ -648,7 +650,8 @@ int CDVDVideoCodecIMX::Decode(BYTE *pData, int iSize, double dts, double pts)
 #ifdef IMX_PROFILE
       before_dec = XbmcThreads::SystemClockMillis();
 #endif
-      m_bytesToBeConsumed += inData.nSize;
+      if (m_decOpenParam.CodecFormat == VPU_V_AVC)
+        m_bytesToBeConsumed += inData.nSize;
       ret = VPU_DecDecodeBuf(m_vpuHandle, &inData, &decRet);
 #ifdef IMX_PROFILE
         CLog::Log(LOGDEBUG, "%s - VPU dec 0x%x decode takes : %lld\n\n", __FUNCTION__, decRet,  XbmcThreads::SystemClockMillis() - before_dec);
@@ -718,7 +721,7 @@ int CDVDVideoCodecIMX::Decode(BYTE *pData, int iSize, double dts, double pts)
           else
             CLog::Log(LOGERROR, "%s - could not find frame buffer\n", __FUNCTION__);
         }
-        frameConsumed = true;
+        m_dts.push(dts);
       } //VPU_DEC_ONE_FRM_CONSUMED
 
       if (decRet & VPU_DEC_OUTPUT_DIS)
@@ -752,7 +755,8 @@ int CDVDVideoCodecIMX::Decode(BYTE *pData, int iSize, double dts, double pts)
           CLog::Log(LOGERROR, "%s - VPU Cannot get output frame(%d).\n", __FUNCTION__, ret);
           goto out_error;
         }
-
+        //Release a ts
+        m_dts.pop();
         // Display frame
         ret = VPU_DecOutFrameDisplayed(m_vpuHandle, m_frameInfo.pDisplayFrameBuf);
         if(ret != VPU_DEC_RET_SUCCESS)
@@ -764,10 +768,14 @@ int CDVDVideoCodecIMX::Decode(BYTE *pData, int iSize, double dts, double pts)
 
       if (decRet & VPU_DEC_OUTPUT_REPEAT)
       {
+        //Release a ts
+        m_dts.pop();
         CLog::Log(LOGDEBUG, "%s - Frame repeat.\n", __FUNCTION__);
       }
       if (decRet & VPU_DEC_OUTPUT_DROPPED)
       {
+        //Release a ts
+        m_dts.pop();
         CLog::Log(LOGDEBUG, "%s - Frame dropped.\n", __FUNCTION__);
       }
       if (decRet & VPU_DEC_NO_ENOUGH_BUF)
@@ -776,6 +784,8 @@ int CDVDVideoCodecIMX::Decode(BYTE *pData, int iSize, double dts, double pts)
       }
       if (decRet & VPU_DEC_SKIP)
       {
+        //Release a ts
+        m_dts.pop();
         CLog::Log(LOGDEBUG, "%s - Frame skipped.\n", __FUNCTION__);
       }
       if (decRet & VPU_DEC_FLUSH)
@@ -823,12 +833,6 @@ int CDVDVideoCodecIMX::Decode(BYTE *pData, int iSize, double dts, double pts)
     // This pts is related to the frame that will be consumed
     // at next call...
     m_previousPts = pts;
-    if (retStatus & VC_PICTURE)
-      // If a picture was produced and some data are still to
-      // be consumed, do not ask for additional buffer as
-      // we likely already have enough data to produce a
-      // new output frame at next call
-      retStatus &= (~VC_BUFFER);
   }
 
 #ifdef IMX_PROFILE
@@ -845,6 +849,10 @@ void CDVDVideoCodecIMX::Reset()
   int ret;
 
   CLog::Log(LOGDEBUG, "%s - called\n", __FUNCTION__);
+
+  // Clear dts queue
+  while(!m_dts.empty())
+    m_dts.pop();
 
   // Invalidate all buffers
   for(int i=0; i < m_vpuFrameBufferNum; i++)
@@ -903,15 +911,24 @@ bool CDVDVideoCodecIMX::GetPicture(DVDVideoPicture* pDvdVideoPicture)
     CDVDVideoCodecIPUBuffer *ipuBuffer = NULL;
 
     pDvdVideoPicture->pts = buffer->GetPts();
+    if (m_dts.size())
+    {
+      pDvdVideoPicture->dts = m_dts.front();
+      m_dts.pop();
+    }
+    else
+      CLog::Log(LOGERROR, "%s - logic error: no DTS available", __FUNCTION__);
+
     if (!m_usePTS)
     {
       pDvdVideoPicture->pts = DVD_NOPTS_VALUE;
+      pDvdVideoPicture->dts = DVD_NOPTS_VALUE;
     }
 
     buffer->Queue(&m_frameInfo);
 
 #ifdef TRACE_FRAMES
-    CLog::Log(LOGDEBUG, "+  %02d  pts %f  (VPU)\n", idx, pDvdVideoPicture->pts);
+    CLog::Log(LOGDEBUG, "+  %02d  dts %f pts %f  (VPU)\n", idx, pDvdVideoPicture->dts, pDvdVideoPicture->pts);
 #endif
 
     ipuBuffer = m_deinterlacer.Process(buffer, m_frameInfo.eFieldType, m_modeDeinterlace > 1);
