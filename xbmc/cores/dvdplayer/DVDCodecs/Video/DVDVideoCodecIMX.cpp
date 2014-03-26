@@ -26,6 +26,7 @@
 #include <sys/ioctl.h>
 #include <unistd.h>
 #include <sys/mman.h>
+#include <sys/types.h>
 #include <linux/mxcfb.h>
 #include <linux/ipu.h>
 #include "threads/SingleLock.h"
