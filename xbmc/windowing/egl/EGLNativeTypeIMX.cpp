@@ -18,6 +18,7 @@
  *
  */
 
+#include <sys/types.h>
 #include <linux/mxcfb.h>
 #include "system.h"
 #include <EGL/egl.h>
