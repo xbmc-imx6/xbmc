@@ -211,8 +211,8 @@ bool CEGLNativeTypeIMX::ProbeResolutions(std::vector<RESOLUTION_INFO> &resolutio
 
   std::string valstr;
   get_sysfs_str("/sys/class/graphics/fb0/modes", valstr);
-  std::vector<CStdString> probe_str;
-  StringUtils::SplitString(valstr, "\n", probe_str);
+  std::vector<string> probe_str;
+  probe_str = StringUtils::Split(valstr, "\n");
 
   resolutions.clear();
   RESOLUTION_INFO res;
