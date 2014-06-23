@@ -1228,7 +1228,7 @@ XBMC_Event CLinuxInputDevices::ReadEvent()
     if ((now - m_lastHotplugCheck) >= 10)
     {
       // Comment for now as it has visible issue on video decoding when USB devices are available
-      //CheckHotplugged();
+      CheckHotplugged();
       m_lastHotplugCheck = now;
     }
   }
