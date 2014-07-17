@@ -163,6 +163,9 @@ bool CAddonInstaller::Cancel(const CStdString &addonID)
 
 bool CAddonInstaller::PromptForInstall(const CStdString &addonID, AddonPtr &addon)
 {
+  if (!g_passwordManager.CheckMenuLock(WINDOW_ADDON_BROWSER))
+    return false;
+
   // we assume that addons that are enabled don't get to this routine (i.e. that GetAddon() has been called)
   if (CAddonMgr::Get().GetAddon(addonID, addon, ADDON_UNKNOWN, false))
     return false; // addon is installed but disabled, and the user has specifically activated something that needs
@@ -210,6 +213,9 @@ bool CAddonInstaller::PromptForInstall(const CStdString &addonID, AddonPtr &addo
 
 bool CAddonInstaller::Install(const CStdString &addonID, bool force, const CStdString &referer, bool background)
 {
+  if (!g_passwordManager.CheckMenuLock(WINDOW_ADDON_BROWSER))
+    return false;
+
   AddonPtr addon;
   bool addonInstalled = CAddonMgr::Get().GetAddon(addonID, addon, ADDON_UNKNOWN, false);
   if (addonInstalled && !force)
@@ -270,6 +276,9 @@ bool CAddonInstaller::DoInstall(const AddonPtr &addon, const CStdString &hash, b
 
 bool CAddonInstaller::InstallFromZip(const CStdString &path)
 {
+  if (!g_passwordManager.CheckMenuLock(WINDOW_ADDON_BROWSER))
+    return false;
+
   // grab the descriptive XML document from the zip, and read it in
   CFileItemList items;
   // BUG: some zip files return a single item (root folder) that we think is stored, so we don't use the zip:// protocol
@@ -289,7 +298,7 @@ bool CAddonInstaller::InstallFromZip(const CStdString &path)
   if (xml.LoadFile(archive) && CAddonMgr::Get().LoadAddonDescriptionFromMemory(xml.RootElement(), addon))
   {
     // set the correct path
-    addon->Props().path = path;
+    addon->Props().path = items[0]->GetPath();
 
     // install the addon
     return DoInstall(addon);
@@ -383,7 +392,7 @@ void CAddonInstaller::UpdateRepos(bool force, bool wait)
     CAddonDatabase database;
     database.Open();
     CDateTime lastUpdate = database.GetRepoTimestamp(addons[i]->ID());
-    if (force || !lastUpdate.IsValid() || lastUpdate + CDateTimeSpan(0,6,0,0) < CDateTime::GetCurrentDateTime())
+    if (force || !lastUpdate.IsValid() || lastUpdate + CDateTimeSpan(0,24,0,0) < CDateTime::GetCurrentDateTime())
     {
       CLog::Log(LOGDEBUG,"Checking repositories for updates (triggered by %s)",addons[i]->Name().c_str());
       m_repoUpdateJob = CJobManager::GetInstance().AddJob(new CRepositoryUpdateJob(addons), this);

@@ -38,7 +38,7 @@ msgstr "Höchste Qualität"
 
 msgctxt "#30005"
 msgid "Nervous Mode [more mode changes]"
-msgstr "Nervöser Modus [mehr Modi Änderungen]"
+msgstr "Nervöser Modus [mehr Modus-Änderungen]"
 
 msgctxt "#30006"
 msgid "Speed [skip some frames]"
