@@ -1195,7 +1195,7 @@ msgstr "出力設定"
 
 msgctxt "#338"
 msgid "Fixed"
-msgstr "Fixed"
+msgstr "固定"
 
 msgctxt "#339"
 msgid "Optimized"
@@ -1228,6 +1228,10 @@ msgstr "公開年"
 msgctxt "#347"
 msgid "DTS-HD capable receiver"
 msgstr "DTS-HD 対応レシーバー"
+
+msgctxt "#348"
+msgid "Enable passthrough"
+msgstr "パススルーを有効にする"
 
 msgctxt "#349"
 msgid "TrueHD capable receiver"
@@ -1399,7 +1403,7 @@ msgstr "曇り一時雨又は雪"
 
 msgctxt "#391"
 msgid "Low"
-msgstr "Low"
+msgstr "最低気温"
 
 msgctxt "#392"
 msgid "Medium"
@@ -1407,7 +1411,7 @@ msgstr "Medium"
 
 msgctxt "#393"
 msgid "High"
-msgstr "High"
+msgstr "最高気温"
 
 msgctxt "#394"
 msgid "Fog"
@@ -1847,7 +1851,7 @@ msgstr "実行"
 
 msgctxt "#519"
 msgid "Launch in..."
-msgstr "Launch in..."
+msgstr "実行..."
 
 msgctxt "#521"
 msgid "Compilations"
@@ -2715,7 +2719,7 @@ msgstr "Continuous Repeat Delay (ms)"
 
 msgctxt "#797"
 msgid "Maximum number of clients"
-msgstr "Maximum Number of Clients"
+msgstr "最大クライアント数"
 
 msgctxt "#798"
 msgid "Internet access"
@@ -3497,6 +3501,10 @@ msgctxt "#10038"
 msgid "Advanced"
 msgstr "高度な設定"
 
+msgctxt "#10039"
+msgid "Expert"
+msgstr "エキスパート"
+
 msgctxt "#10040"
 msgid "Add-on browser"
 msgstr "アドオンブラウザー"
@@ -4069,6 +4077,10 @@ msgctxt "#13025"
 msgid "Joystick unplugged"
 msgstr "ジョイスティックが外されました"
 
+msgctxt "#13026"
+msgid "Try to wake remote servers on access"
+msgstr "アクセスするリモートサーバの起動を試みる"
+
 msgctxt "#13027"
 msgid "Wake on Lan (%s)"
 msgstr "Wake on LAN (%s)"
@@ -4080,6 +4092,10 @@ msgstr "ネットワーク接続中..."
 msgctxt "#13029"
 msgid "Failed to execute Wake on Lan!"
 msgstr "Wake on Lan の実行に失敗しました！"
+
+msgctxt "#13030"
+msgid "Waiting for server to wake up..."
+msgstr "サーバー起動中..."
 
 msgctxt "#13032"
 msgid "Waiting for services to launch..."
@@ -4195,7 +4211,7 @@ msgstr "ディスプレイをブランクにする"
 
 msgctxt "#13140"
 msgid "Active connections detected!"
-msgstr "Active Connections Detected!"
+msgstr "アクディブな接続が検出されました!"
 
 msgctxt "#13141"
 msgid "If you proceed, you might not be able to control XBMC"
@@ -6923,7 +6939,7 @@ msgstr "コメディ"
 
 msgctxt "#19505"
 msgid "Soap/Melodrama/Folkloric"
-msgstr "昼ドラ/メロドラマ/フォルクローレ"
+msgstr "昼ドラ/メロドラマ/民族的"
 
 msgctxt "#19506"
 msgid "Romance"
@@ -6931,11 +6947,11 @@ msgstr "恋愛もの"
 
 msgctxt "#19507"
 msgid "Serious/Classical/Religious/Historical Movie/Drama"
-msgstr "シリアス/クラシック\\宗教的/歴史映画/ドラマ"
+msgstr "シリアス/クラシック/宗教的/歴史映画/ドラマ"
 
 msgctxt "#19508"
 msgid "Adult Movie/Drama"
-msgstr "アダルト映画・ドラマ"
+msgstr "アダルト映画/ドラマ"
 
 msgctxt "#19516"
 msgid "News/Current Affairs"
@@ -8275,7 +8291,7 @@ msgstr "視聴済みを除外"
 
 msgctxt "#20368"
 msgid "Prod code"
-msgstr "Prod Code"
+msgstr "製品コード"
 
 msgctxt "#20369"
 msgid "Show plot for unwatched items"
@@ -8604,6 +8620,10 @@ msgstr "Listener"
 msgctxt "#20455"
 msgid "Listeners"
 msgstr "Listeners"
+
+msgctxt "#20456"
+msgid "Flatten library hierarchy"
+msgstr "ライブラリの階層をフラット化"
 
 msgctxt "#20457"
 msgid "Movie set"
@@ -10127,7 +10147,7 @@ msgstr "Departure from normal"
 
 msgctxt "#33027"
 msgid "Sunrise"
-msgstr "Sunrise"
+msgstr "日の出"
 
 msgctxt "#33028"
 msgid "Sunset"
@@ -10135,11 +10155,11 @@ msgstr "日没"
 
 msgctxt "#33029"
 msgid "Details"
-msgstr "Details"
+msgstr "詳細"
 
 msgctxt "#33030"
 msgid "Outlook"
-msgstr "Outlook"
+msgstr "見通し"
 
 msgctxt "#33031"
 msgid "Coverflow"
@@ -10155,7 +10175,7 @@ msgstr "Map list %s category"
 
 msgctxt "#33034"
 msgid "36 Hour"
-msgstr "36 Hour"
+msgstr "36時間"
 
 msgctxt "#33035"
 msgid "Maps"
@@ -11033,9 +11053,17 @@ msgctxt "#36203"
 msgid "Enable the Personal Video Recorder (PVR) features in XBMC. This requires that at least one PVR Add-on is installed."
 msgstr "XBMC のパーソナルビデオレコーダー (PVR) 機能を有効にします。これを有効にするには、少なくとも1つ以上の PVR アドオンがインストールされている必要があります。"
 
+msgctxt "#36216"
+msgid "Folder where channel icons are stored."
+msgstr "チャンネルのアイコンが保存されているフォルダ。"
+
+msgctxt "#36217"
+msgid "Scan for missing channel icons."
+msgstr "アイコンがないチャンネルをスキャンします。"
+
 msgctxt "#36218"
 msgid "Category for electronic programming guide settings."
-msgstr "EPG 設定用のカテゴリーです。"
+msgstr "EPG 設定のカテゴリーです。"
 
 msgctxt "#36219"
 msgid "Default electronic programming guide window to show."
@@ -11044,6 +11072,26 @@ msgstr "デフォルトで表示する EPG ウィンドウ。"
 msgctxt "#36222"
 msgid "Do not import EPG data while playing TV to minimise CPU usage."
 msgstr "TV 視聴時に EPG インポートを無効にして CPU 負荷を軽減する"
+
+msgctxt "#36226"
+msgid "Category for PVR playback and channel switching settings."
+msgstr "PVR 再生とチャンネル切り替えの設定のカテゴリーです。"
+
+msgctxt "#36233"
+msgid "Category for default recording duration settings."
+msgstr "既定の録画時間の設定のカテゴリーです。"
+
+msgctxt "#36240"
+msgid "Category for PVR power management settings, such as when to wake the PVR backend server."
+msgstr "PVR バックエンドサーバーなどを目覚めさせる電源管理の設定のカテゴリーです。"
+
+msgctxt "#36247"
+msgid "Category for parental control settings if the PVR backend server supports parental controls."
+msgstr "PVR バックエンドがペアレンタルコントロールをサポートしている場合の設定のカテゴリーです。"
+
+msgctxt "#36251"
+msgid "Category for any specific settings for your PVR backend, if the PVR backend supports changing those settings in XBMC."
+msgstr "PVR バックエンドが XBMC からの設定変更をサポートしている場合の設定のカテゴリーです。"
 
 msgctxt "#36254"
 msgid "Enable the music library."
@@ -11124,6 +11172,22 @@ msgstr "リッピング完了後、自動でディスクイジェクトする。
 msgctxt "#36292"
 msgid "Category containing the settings for how karaoke is handled."
 msgstr "カラオケに関する設定のカテゴリーです。"
+
+msgctxt "#36295"
+msgid "Select the font type used during karaoke."
+msgstr "カラオケに使用するフォントを選択します。"
+
+msgctxt "#36296"
+msgid "Select the size of the font used during karaoke."
+msgstr "カラオケに使用するフォントサイズを選択します。"
+
+msgctxt "#36297"
+msgid "Select the font colour used during karaoke."
+msgstr "カラオケに使用するフォント色を選択します。"
+
+msgctxt "#36298"
+msgid "Select the character set used during karaoke."
+msgstr "カラオケに使用する文字セットを選択します。"
 
 msgctxt "#36301"
 msgid "No info available yet."
@@ -11313,6 +11377,46 @@ msgctxt "#36399"
 msgid "Category containing settings for the cache function."
 msgstr "キャッシュ機能に関する設定のカテゴリーです。"
 
+msgctxt "#36400"
+msgid "Enable cache for playback of Video, Audio or DVDs from hard disk."
+msgstr "ハードディスク上のビデオ/オーディオ/DVD 再生でキャッシュを有効にします。"
+
+msgctxt "#36401"
+msgid "Enable cache for playback of Video from DVD-ROM."
+msgstr "DVD-ROM のビデオ再生でキャッシュを有効にします。"
+
+msgctxt "#36402"
+msgid "Enable cache for Video playback from Local Network."
+msgstr "ローカルネットワーク上のビデオ再生でキャッシュを有効にします。"
+
+msgctxt "#36403"
+msgid "Enable cache for Video playback from Internet."
+msgstr "インターネット上のビデオ再生でキャッシュを有効にします。"
+
+msgctxt "#36404"
+msgid "Enable cache for playback of Audio from DVD-ROM."
+msgstr "DVD-ROM のオーディオ再生でキャッシュを有効にします。"
+
+msgctxt "#36405"
+msgid "Enable cache for Audio playback from Local Network."
+msgstr "ローカルネットワーク上のオーディオ再生でキャッシュを有効にします。"
+
+msgctxt "#36406"
+msgid "Enable cache for Audio playback from Internet."
+msgstr "インターネット上のビデオの再生キャッシュを有効にします。"
+
+msgctxt "#36407"
+msgid "Enable cache for playback of DVD from DVD-ROM."
+msgstr "DVD-ROM の DVD 再生でキャッシュを有効にします。"
+
+msgctxt "#36408"
+msgid "Enable cache for DVD playback from Local Network."
+msgstr "ローカルネットワーク上の DVD 再生でキャッシュを有効にします。"
+
+msgctxt "#36409"
+msgid "Enable cache of unknown types from Internet."
+msgstr "インターネット上の不明な種類であってもキャッシュを有効にします。"
+
 msgctxt "#36410"
 msgid "No info available yet."
 msgstr "情報がまだありません。"
@@ -11336,6 +11440,10 @@ msgstr "情報がまだありません。"
 msgctxt "#36415"
 msgid "No info available yet."
 msgstr "情報がまだありません。"
+
+msgctxt "#36416"
+msgid "Specify the type of remote used."
+msgstr "リモートの種類を指定します。"
 
 msgctxt "#36417"
 msgid "Always run an XBMC helper so that the remote can be used to start XBMC."
@@ -11369,6 +11477,10 @@ msgctxt "#36428"
 msgid "Record"
 msgstr "録音"
 
+msgctxt "#36520"
+msgid "Playback mode of stereoscopic videos."
+msgstr "立体映像の再生モード。"
+
 msgctxt "#36522"
 msgid "Use preferred mode"
 msgstr "お好みのモードをご使用"
@@ -11388,6 +11500,10 @@ msgstr "推奨モード"
 msgctxt "#36532"
 msgid "Same as movie"
 msgstr "ムービーと同じ"
+
+msgctxt "#36537"
+msgid "Set playback mode of stereoscopic 3D videos."
+msgstr "3D 立体映像の再生モードを設定します。"
 
 msgctxt "#36544"
 msgid "Enable hardware decoding of video files."
