@@ -677,19 +677,7 @@ bool CBitstreamConverter::BitstreamConvert(uint8_t* pData, int iSize, uint8_t **
     if (buf + nal_size > buf_end || nal_size < 0)
       goto fail;
 
-    // prepend only to the first type 5 NAL unit of an IDR picture
-    if (m_sps_pps_context.first_idr && (unit_type == 5 || unit_type == 7 || unit_type == 8))
-    {
-      BitstreamAllocAndCopy(poutbuf, poutbuf_size,
-        m_sps_pps_context.sps_pps_data, m_sps_pps_context.size, buf, nal_size);
-      m_sps_pps_context.first_idr = 0;
-    }
-    else
-    {
-      BitstreamAllocAndCopy(poutbuf, poutbuf_size, NULL, 0, buf, nal_size);
-      if (!m_sps_pps_context.first_idr && unit_type == 1)
-          m_sps_pps_context.first_idr = 1;
-    }
+    BitstreamAllocAndCopy(poutbuf, poutbuf_size, NULL, 0, buf, nal_size);
 
     buf += nal_size;
     cumul_size += nal_size + m_sps_pps_context.length_size;
