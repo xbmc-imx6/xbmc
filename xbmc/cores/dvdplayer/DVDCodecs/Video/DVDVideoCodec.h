@@ -25,6 +25,7 @@
 #include <vector>
 #include <string>
 #include "cores/VideoRenderers/RenderFormats.h"
+#include "DVDVideoCodecInfo.h"
 
 extern "C" {
 #include "libavcodec/avcodec.h"
@@ -95,6 +96,11 @@ struct DVDVideoPicture
     struct {
       CDVDMediaCodecInfo *mediacodec;
     };
+  
+    struct {
+      CDVDVideoCodecBuffer *codecinfo;
+    };
+
   };
 
   unsigned int iFlags;
