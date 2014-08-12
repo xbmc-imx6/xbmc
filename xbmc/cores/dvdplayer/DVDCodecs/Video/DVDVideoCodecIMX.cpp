@@ -33,20 +33,18 @@
 #include "DVDClock.h"
 #include "threads/Atomics.h"
 
-
-// FIXME get rid of these defines properly
 #define FRAME_ALIGN 16
 #define MEDIAINFO 1
 #define _4CC(c1,c2,c3,c4) (((uint32_t)(c4)<<24)|((uint32_t)(c3)<<16)|((uint32_t)(c2)<<8)|(uint32_t)(c1))
 #define Align(ptr,align)  (((unsigned int)ptr + (align) - 1)/(align)*(align))
 
-// Extrace physical and virtual addresses from CDVDVideoCodecBuffer pointers
+// Helpers to extract physical and virtual addresses from CDVDVideoCodecBuffer pointers
 #define GET_PHYS_ADDR(buf) (buf)->data[1]
 #define GET_VIRT_ADDR(buf) (buf)->data[0]
 #define GET_DEINTERLACER(buf) (buf)->data[2]
 #define GET_FIELDTYPE(buf) (buf)->data[3]
 
-// Experiments show that we need at least one more (+1) V4L buffer than the min value returned by the VPU
+// Experiments show that we need at least one more (+1) VPU buffer than the min value returned by the VPU
 const int CDVDVideoCodecIMX::m_extraVpuBuffers = 6;
 const int CDVDVideoCodecIMX::m_maxVpuDecodeLoops = 5;
 CCriticalSection CDVDVideoCodecIMX::m_codecBufferLock;
@@ -215,7 +213,7 @@ bool CDVDVideoCodecIMX::VpuOpen(void)
   }
 
   // Note that libvpufsl (file vpu_wrapper.c) associates VPU_DEC_CAP_FRAMESIZE
-  // capability to the value of  nDecFrameRptEnabled which is in fact directly
+  // capability to the value of nDecFrameRptEnabled which is in fact directly
   // related to the ability to generate VPU_DEC_ONE_FRM_CONSUMED even if the
   // naming is misleading...
   ret = VPU_DecGetCapability(m_vpuHandle, VPU_DEC_CAP_FRAMESIZE, &param);
@@ -314,13 +312,12 @@ bool CDVDVideoCodecIMX::VpuAllocFrameBuffers(void)
     m_vpuFrameBuffers[i].pbufCb=ptr+ySize;
     m_vpuFrameBuffers[i].pbufCr=0;
     m_vpuFrameBuffers[i].pbufMvCol=ptr+ySize+uvSize;
-    //ptr+=ySize+uSize+vSize+mvSize;
+
     // fill virt addr
     m_vpuFrameBuffers[i].pbufVirtY=ptrVirt;
     m_vpuFrameBuffers[i].pbufVirtCb=ptrVirt+ySize;
     m_vpuFrameBuffers[i].pbufVirtCr=0;
     m_vpuFrameBuffers[i].pbufVirtMvCol=ptrVirt+ySize+uvSize;
-    //ptrVirt+=ySize+uSize+vSize+mvSize;
 
     m_vpuFrameBuffers[i].pbufY_tilebot=0;
     m_vpuFrameBuffers[i].pbufCb_tilebot=0;
@@ -452,12 +449,6 @@ bool CDVDVideoCodecIMX::Open(CDVDStreamInfo &hints, CDVDCodecOptions &options)
     m_decOpenParam.CodecFormat = VPU_V_VC1_AP;
     m_pFormatName = "iMX-vc1";
     break;
-/* FIXME TODO
- * => for this type we have to set height, width, nChromaInterleave and nMapType
-  case CODEC_ID_MJPEG:
-    m_decOpenParam.CodecFormat = VPU_V_MJPG;
-    m_pFormatName = "iMX-mjpg";
-    break;*/
   case CODEC_ID_CAVS:
   case CODEC_ID_AVS:
     m_decOpenParam.CodecFormat = VPU_V_AVS;
@@ -515,7 +506,7 @@ void CDVDVideoCodecIMX::Dispose(void)
   VpuDecRetCode  ret;
   bool VPU_loaded = m_vpuHandle;
 
-  // Block render thread from using that framebuffers
+  // Prevent rendering thread from using frame buffers
   Enter();
 
   // Release last buffer
@@ -549,7 +540,7 @@ void CDVDVideoCodecIMX::Dispose(void)
   m_frameCounter = 0;
   m_deinterlacer.Close();
 
-  // Clear memory
+  // Release memory
   if (m_outputBuffers != NULL)
   {
     delete m_outputBuffers;
@@ -642,7 +633,6 @@ int CDVDVideoCodecIMX::Decode(BYTE *pData, int iSize, double dts, double pts)
     inData.nSize = demuxer_bytes;
     inData.pPhyAddr = NULL;
     inData.pVirAddr = demuxer_content;
-    // FIXME TODO VP8 & DivX3 require specific sCodecData values
     if ((m_decOpenParam.CodecFormat == VPU_V_MPEG2) ||
         (m_decOpenParam.CodecFormat == VPU_V_VC1_AP)||
         (m_decOpenParam.CodecFormat == VPU_V_XVID))
@@ -941,22 +931,12 @@ bool CDVDVideoCodecIMX::GetPicture(DVDVideoPicture* pDvdVideoPicture)
     CLog::Log(LOGDEBUG, "+  %02d dts %f pts %f  (VPU)\n", idx, pDvdVideoPicture->dts, pDvdVideoPicture->pts);
 #endif
 
-    /*
-    // This does not work reliably since some streams do not report
-    // correctly if a frame is interlaced.
-    if (m_frameInfo.eFieldType != VPU_FIELD_NONE)
-      GET_DEINTERLACER(buffer) = (uint8_t*)&m_deinterlacer;
-    else
-      GET_DEINTERLACER(buffer) = NULL;
-    */
-
     pDvdVideoPicture->codecinfo = buffer;
     pDvdVideoPicture->codecinfo->Lock();
 
     // Save last buffer
     if (m_lastBuffer)
       SAFE_RELEASE(m_lastBuffer);
-
     m_lastBuffer = buffer;
     m_lastBuffer->Lock();
   }
@@ -973,7 +953,7 @@ void CDVDVideoCodecIMX::SetDropState(bool bDrop)
 
   // We are fast enough to continue to really decode every frames
   // and avoid artefacts...
-  // (Of course these frames won't be rendered but only decoded !)
+  // (Of course these frames won't be rendered but only decoded)
 
   if (m_dropState != bDrop)
   {
@@ -1463,8 +1443,7 @@ CDVDVideoCodecIPUBuffers::Process(CDVDVideoCodecBuffer *sourceBuffer,
   CDVDVideoCodecIPUBuffer *target = NULL;
   bool ret = true;
 
-  // TODO: Needs further checks on real streams
-  if (!m_bufferNum /*|| (fieldType == VPU_FIELD_NONE)*/)
+  if (!m_bufferNum)
     return NULL;
 
   for (int i=0; i < m_bufferNum; i++ )
@@ -1475,7 +1454,7 @@ CDVDVideoCodecIPUBuffers::Process(CDVDVideoCodecBuffer *sourceBuffer,
     // SRC: Current VPU physical buffer address + last VPU buffer address
     // DST: IPU buffer[i]
     ret = m_buffers[i]->Process(m_ipuHandle, (CDVDVideoCodecIMXBuffer*)sourceBuffer,
-                                fieldType, m_currentFieldFmt/* | IPU_DEINTERLACE_RATE_EN*/,
+                                fieldType, m_currentFieldFmt,
                                 lowMotion);
     if (ret)
     {
@@ -1493,9 +1472,6 @@ CDVDVideoCodecIPUBuffers::Process(CDVDVideoCodecBuffer *sourceBuffer,
   {
     CLog::Log(LOGERROR, "Deinterlacing: did not find free buffer, forward unprocessed frame\n");
   }
-
-  // Toggle frame index bit
-  //m_currentFieldFmt ^= IPU_DEINTERLACE_RATE_FRAME1;
 
   return target;
 }
