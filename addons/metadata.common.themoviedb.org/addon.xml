@@ -2,7 +2,7 @@
 <addon id="metadata.common.themoviedb.org"
        name="The Movie Database Scraper Library"
        version="2.12.1"
-       provider-name="Team XBMC">
+       provider-name="Team-Kodi">
   <requires>
     <import addon="xbmc.metadata" version="2.1.0"/>
   </requires>
@@ -10,7 +10,6 @@
              library="tmdb.xml"/>
   <extension point="xbmc.addon.metadata">
     <platform>all</platform>
-    <minversion>20000</minversion>
     <summary lang="bg">Библиотека за сваляне на инф. от TMDb</summary>
     <summary lang="en">TMDb Scraper Library</summary>
     <summary lang="es">Scraper de peliculas de TMDb</summary>
