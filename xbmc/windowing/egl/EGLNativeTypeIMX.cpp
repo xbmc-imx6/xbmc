@@ -218,10 +218,37 @@ bool CEGLNativeTypeIMX::ProbeResolutions(std::vector<RESOLUTION_INFO> &resolutio
   RESOLUTION_INFO res;
   for (size_t i = 0; i < probe_str.size(); i++)
   {
-    if(!StringUtils::StartsWith(probe_str[i], "S:"))
+
+    bool CEAshortDef = StringUtils::StartsWith(probe_str[i], "S:");
+    bool CEADetailedDef = StringUtils::StartsWith(probe_str[i], "D:");
+    if ((!CEAshortDef) &&
+        (!CEADetailedDef))
       continue;
+
     if(ModeToResolution(probe_str[i], &res))
-      resolutions.push_back(res);
+    {
+      // In case a CEA detailed definition and a CEA short definition exist
+      // for the same resolution then we keep only the detailed one :
+      //  If the detailed one is already in the resolutions vector then do not add the short one
+      //  If the short one is already in the resolutions vector then remove it
+      bool addRes = true;
+      for (std::vector<RESOLUTION_INFO>::iterator it = resolutions.begin();
+             it != resolutions.end(); ++it)
+      {
+        if (it->strMode.Equals(res.strMode))
+        {
+          if (CEADetailedDef)
+          {
+            resolutions.erase(it);
+            break;
+          }
+          else
+            addRes = false;
+        }
+      }
+      if (addRes)
+        resolutions.push_back(res);
+    }
   }
   return resolutions.size() > 0;
 }
