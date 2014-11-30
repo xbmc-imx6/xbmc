@@ -418,6 +418,9 @@ CDVDVideoCodecIMX::CDVDVideoCodecIMX() : m_mixer(&m_deinterlacer)
   m_bytesToBeConsumed = 0;
   m_previousPts = DVD_NOPTS_VALUE;
   m_mixer.SetCapacity(3,3);
+#ifdef DUMP_STREAM  
+  m_dump = NULL;
+#endif
 }
 
 CDVDVideoCodecIMX::~CDVDVideoCodecIMX()
@@ -427,6 +430,23 @@ CDVDVideoCodecIMX::~CDVDVideoCodecIMX()
 
 bool CDVDVideoCodecIMX::Open(CDVDStreamInfo &hints, CDVDCodecOptions &options)
 {
+#ifdef DUMP_STREAM
+  m_dump = fopen("stream.dump", "wb");
+  if (m_dump != NULL)
+  {
+    fwrite(&hints.software, sizeof(hints.software), 1, m_dump);
+    fwrite(&hints.codec, sizeof(hints.codec), 1, m_dump);
+    fwrite(&hints.profile, sizeof(hints.profile), 1, m_dump);
+    fwrite(&hints.codec_tag, sizeof(hints.codec_tag), 1, m_dump);
+    fwrite(&hints.extrasize, sizeof(hints.extrasize), 1, m_dump);
+    CLog::Log(LOGNOTICE, "Dump: HEADER: %d  %d  %d  %d  %d\n",
+              hints.software, hints.codec, hints.profile,
+              hints.codec_tag, hints.extrasize);
+    if (hints.extrasize > 0)
+      fwrite(hints.extradata, 1, hints.extrasize, m_dump);
+  }
+#endif
+
   if (hints.software)
   {
     CLog::Log(LOGNOTICE, "iMX VPU : software decoding requested.\n");
@@ -566,6 +586,14 @@ void CDVDVideoCodecIMX::Dispose(void)
   VpuDecRetCode  ret;
   bool VPU_loaded = m_vpuHandle;
 
+#ifdef DUMP_STREAM
+  if (m_dump != NULL)
+  {
+    fclose(m_dump);
+    m_dump = NULL;
+  }
+#endif
+
   // Dispose the mixer thread
   m_mixer.Dispose();
 
@@ -647,6 +675,19 @@ int CDVDVideoCodecIMX::Decode(BYTE *pData, int iSize, double dts, double pts)
 #endif
 #if defined(IMX_PROFILE) || defined(IMX_PROFILE_BUFFERS)
   unsigned long long before_dec;
+#endif
+
+#ifdef DUMP_STREAM
+  if (m_dump != NULL)
+  {
+    if (pData)
+    {
+      fwrite(&dts, sizeof(double), 1, m_dump);
+      fwrite(&pts, sizeof(double), 1, m_dump);
+      fwrite(&iSize, sizeof(int), 1, m_dump);
+      fwrite(pData, 1, iSize, m_dump);
+    }
+  }
 #endif
 
   SAFE_RELEASE(m_currentBuffer);

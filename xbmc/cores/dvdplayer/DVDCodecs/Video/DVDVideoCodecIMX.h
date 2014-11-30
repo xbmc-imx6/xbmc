@@ -50,6 +50,8 @@
 //#define IMX_PROFILE
 //#define TRACE_FRAMES
 
+#define DUMP_STREAM
+
 class CDecMemInfo
 {
 public:
@@ -310,4 +312,7 @@ protected:
   int                          m_bytesToBeConsumed; // Remaining bytes in VPU
   double                       m_previousPts;       // Enable to keep pts when needed
   bool                         m_frameReported;     // State whether the frame consumed event will be reported by libfslvpu
+#ifdef DUMP_STREAM
+  FILE                        *m_dump;
+#endif
 };
