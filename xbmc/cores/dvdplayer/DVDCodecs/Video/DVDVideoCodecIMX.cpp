@@ -418,7 +418,7 @@ CDVDVideoCodecIMX::CDVDVideoCodecIMX() : m_mixer(&m_deinterlacer)
   m_bytesToBeConsumed = 0;
   m_previousPts = DVD_NOPTS_VALUE;
   m_mixer.SetCapacity(3,3);
-#ifdef DUMP_STREAM  
+#ifdef DUMP_STREAM
   m_dump = NULL;
 #endif
 }
@@ -1347,10 +1347,21 @@ bool CDVDVideoCodecIMXIPUBuffer::Process(int fd, CDVDVideoCodecIMXVPUBuffer *buf
 #ifdef IMX_OUTPUT_FORMAT_I420
   task.output.format = IPU_PIX_FMT_YUV420P;
   iFormat            = 0;
-#else
+#endif
+#ifdef IMX_OUTPUT_FORMAT_NV12
   task.output.format = IPU_PIX_FMT_NV12;
   iFormat            = 1;
 #endif
+#ifdef IMX_OUTPUT_FORMAT_RGB565
+  task.output.format = IPU_PIX_FMT_RGB565;
+  iFormat            = 2;
+#endif
+/*
+#ifdef IMX_OUTPUT_FORMAT_RGB24
+  task.output.format = IPU_PIX_FMT_RGB24;
+  iFormat            = 3;
+#endif
+*/
   task.output.paddr  = (int)pPhysAddr;
 
   // Fill current and next buffer address
@@ -1420,10 +1431,22 @@ bool CDVDVideoCodecIMXIPUBuffer::Allocate(int fd, int width, int height, int nAl
 {
   m_iWidth = Align(width,FRAME_ALIGN);
   m_iHeight = Align(height,(2*FRAME_ALIGN));
-  // I420 == 12 bpp
+#if defined(IMX_OUTPUT_FORMAT_NV12) || defined(IMX_OUTPUT_FORMAT_I420)
+  // I420 == NV12 == 12 bpp
   m_nSize = m_iWidth*m_iHeight*12/8;
-  m_pPhyAddr = m_nSize;
+#endif
+#ifdef IMX_OUTPUT_FORMAT_RGB565
+  // RGB565 = 16 bpp
+  m_nSize = m_iWidth*m_iHeight*16/8;
+#endif
+/*
+#ifdef IMX_OUTPUT_FORMAT_RGB24
+  // RGB24 = 24 bpp
+  m_nSize = m_iWidth*m_iHeight*24/8;
+#endif
+*/
 
+  m_pPhyAddr = m_nSize;
   pPhysAddr = pVirtAddr = NULL;
 
   int r = ioctl(fd, IPU_ALLOC, &m_pPhyAddr);

@@ -162,11 +162,11 @@ const char vertex_src [] =
    attribute vec4 position;              \
    attribute vec2 tc;                    \
    varying vec2 frag_tc;                 \
-										 \
+                                         \
    void main()                           \
    {                                     \
-	  frag_tc = tc;                      \
-	  gl_Position = position;            \
+      frag_tc = tc;                      \
+      gl_Position = position;            \
    }                                     \
 ";
 
@@ -175,10 +175,10 @@ const char fragment_src [] =
 "                                                      \
    uniform sampler2D tex;                              \
    varying vec2 frag_tc;                               \
-													   \
+                                                       \
    void  main()                                        \
    {                                                   \
-	  gl_FragColor = texture2D(tex, frag_tc);          \
+      gl_FragColor = texture2D(tex, frag_tc);          \
    }                                                   \
 ";
 
@@ -520,12 +520,25 @@ class EGL : public Stats {
 
 			GLuint physical = ~0u;
 			GLvoid *virt = (GLvoid*)p.IMXBuffer->pVirtAddr;
-			if ( p.IMXBuffer->iFormat == 0 )
-				glTexDirectVIVMap(GL_TEXTURE_2D, p.IMXBuffer->iWidth, p.IMXBuffer->iHeight, GL_VIV_I420,
-				                  &virt, &physical);
-			else
-				glTexDirectVIVMap(GL_TEXTURE_2D, p.IMXBuffer->iWidth, p.IMXBuffer->iHeight, GL_VIV_NV12,
-				                  &virt, &physical);
+			GLenum format;
+
+			switch ( p.IMXBuffer->iFormat ) {
+				case 0:
+					format = GL_VIV_I420;
+					break;
+				case 1:
+					format = GL_VIV_NV12;
+					break;
+				case 2:
+					format = GL_RGB565;
+					break;
+				default:
+					cerr << "Unsupported buffer format" << endl;
+					break;
+			}
+
+			glTexDirectVIVMap(GL_TEXTURE_2D, p.IMXBuffer->iWidth, p.IMXBuffer->iHeight, format,
+			                  &virt, &physical);
 
 			glTexDirectInvalidateVIV(GL_TEXTURE_2D);
 			glVertexAttribPointer(position_loc, 3, GL_FLOAT, false, 0, vertices);
@@ -534,6 +547,7 @@ class EGL : public Stats {
 			glEnableVertexAttribArray(texture_loc);
 			glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 
+			//glFinish();
 			eglSwapBuffers(display, surface);
 
 			return Stats::Ouput(p);
