@@ -38,11 +38,11 @@ EGLSurface surface;
 #define CheckError(func) do { EGLint result = eglGetError(); if(result != EGL_SUCCESS) { printf("EGL error in %s: %x\n", func, result); return 1;} /*else printf("%s OK\n", func);*/ } while (0)
 
 EGLint const attribute_list[] = {
-	EGL_RED_SIZE,        8,
+		EGL_RED_SIZE,        8,
 		EGL_GREEN_SIZE,      8,
 		EGL_BLUE_SIZE,       8,
-		EGL_ALPHA_SIZE,      8,
-		EGL_DEPTH_SIZE,     16,
+		EGL_ALPHA_SIZE,      0,
+		EGL_DEPTH_SIZE,      0,
 		EGL_STENCIL_SIZE,    0,
 		EGL_SAMPLE_BUFFERS,  0,
 		EGL_SAMPLES,         0,
@@ -184,10 +184,10 @@ const char fragment_src [] =
 
 GLint position_loc, texture_loc;
 GLfloat vertices[] = {
-	-1.0,  1.0, -0.0,
-	 1.0,  1.0, -0.0,
-	-1.0, -1.0, -0.0,
-	 1.0, -1.0, -0.0
+	-1.0,  1.0,  0.0,
+	 1.0,  1.0,  0.0,
+	-1.0, -1.0,  0.0,
+	 1.0, -1.0,  0.0
 };
 
 GLfloat texCoords[] = {
@@ -498,8 +498,9 @@ class EGL : public Stats {
 
 			glGenTextures(1, &m_textureID);
 
-			glClearColor(1.0,1.0,0.0,1.0);
+			glClearColor(0.0,0.0,0.0,1.0);
 			glViewport(0, 0, screeninfo.xres, screeninfo.yres);
+			glEnable(GL_TEXTURE_2D);
 
 			return true;
 		}
@@ -520,7 +521,7 @@ class EGL : public Stats {
 
 			GLuint physical = ~0u;
 			GLvoid *virt = (GLvoid*)p.IMXBuffer->pVirtAddr;
-			GLenum format;
+			GLenum format = GL_INVALID_ENUM;
 
 			switch ( p.IMXBuffer->iFormat ) {
 				case 0:
@@ -532,22 +533,26 @@ class EGL : public Stats {
 				case 2:
 					format = GL_RGB565;
 					break;
+				case 3:
+					format = GL_RGBA;
+					break;
 				default:
 					cerr << "Unsupported buffer format" << endl;
 					break;
 			}
 
-			glTexDirectVIVMap(GL_TEXTURE_2D, p.IMXBuffer->iWidth, p.IMXBuffer->iHeight, format,
-			                  &virt, &physical);
+			if ( format != GL_INVALID_ENUM ) {
+				glTexDirectVIVMap(GL_TEXTURE_2D, p.IMXBuffer->iWidth, p.IMXBuffer->iHeight, format,
+				                  &virt, &physical);
 
-			glTexDirectInvalidateVIV(GL_TEXTURE_2D);
-			glVertexAttribPointer(position_loc, 3, GL_FLOAT, false, 0, vertices);
-			glVertexAttribPointer(texture_loc, 2, GL_FLOAT, false, 0, texCoords);
-			glEnableVertexAttribArray(position_loc);
-			glEnableVertexAttribArray(texture_loc);
-			glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+				glTexDirectInvalidateVIV(GL_TEXTURE_2D);
+				glVertexAttribPointer(position_loc, 3, GL_FLOAT, false, 0, vertices);
+				glVertexAttribPointer(texture_loc, 2, GL_FLOAT, false, 0, texCoords);
+				glEnableVertexAttribArray(position_loc);
+				glEnableVertexAttribArray(texture_loc);
+				glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+			}
 
-			//glFinish();
 			eglSwapBuffers(display, surface);
 
 			return Stats::Ouput(p);
@@ -565,13 +570,43 @@ int main (int argc, char *argv[]) {
 		return 1;
 	}
 
-	int i;
-	unsigned long long before, after;
+	bool progressiveTest = false;
+	bool deinterlacedTest = false;
+	bool progressiveRenderTest = false;
+	bool deinterlacedRenderTest = false;
 
 	CLog::Init("./");
 	CLog::SetLogLevel(LOG_LEVEL_DEBUG);
 
-	{
+	for ( int i = 1; i < argc; ++i ) {
+		const char *parg = argv[i-1];
+		if ( !strcmp(parg, "-vscale") ) {
+			double scale = atof(argv[i]);
+			cerr << "Set quad size to " << scale << endl;
+			for ( int v = 0; v < 4; ++v ) {
+				vertices[v*3] *= scale;
+				vertices[v*3+1] *= scale;
+			}
+		}
+		if ( !strcmp(parg, "-tscale") ) {
+			double scale = atof(argv[i]);
+			cerr << "Set texture map area to " << scale << endl;
+			for ( int t = 0; t < 4; ++t ) {
+				texCoords[t*2] *= scale;
+				texCoords[t*2+1] *= scale;
+			}
+		}
+		else if ( !strcmp(argv[i], "-p") )
+			progressiveTest = true;
+		else if ( !strcmp(argv[i], "-d") )
+			deinterlacedTest = true;
+		else if ( !strcmp(argv[i], "-pr") )
+			progressiveRenderTest = true;
+		else if ( !strcmp(argv[i], "-dr") )
+			deinterlacedRenderTest = true;
+	}
+
+	if ( progressiveTest ) {
 		cerr << "Set deinterlacing to OFF" << endl;
 		CMediaSettings::Get().GetCurrentVideoSettings().m_DeinterlaceMode = VS_DEINTERLACEMODE_OFF;
 
@@ -591,7 +626,7 @@ int main (int argc, char *argv[]) {
 		stats.Wait();
 	}
 
-	{
+	if ( deinterlacedTest ) {
 		cerr << "Set deinterlacing to FORCE" << endl;
 		CMediaSettings::Get().GetCurrentVideoSettings().m_DeinterlaceMode = VS_DEINTERLACEMODE_FORCE;
 
@@ -611,7 +646,7 @@ int main (int argc, char *argv[]) {
 		stats.Wait();
 	}
 
-	{
+	if ( progressiveRenderTest ) {
 		cerr << "Set deinterlacing to OFF and render" << endl;
 		CMediaSettings::Get().GetCurrentVideoSettings().m_DeinterlaceMode = VS_DEINTERLACEMODE_OFF;
 
@@ -631,7 +666,7 @@ int main (int argc, char *argv[]) {
 		egl.Wait();
 	}
 
-	{
+	if ( deinterlacedRenderTest ) {
 		cerr << "Set deinterlacing to FORCE and render" << endl;
 		CMediaSettings::Get().GetCurrentVideoSettings().m_DeinterlaceMode = VS_DEINTERLACEMODE_FORCE;
 
